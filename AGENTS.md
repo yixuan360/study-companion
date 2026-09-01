@@ -42,7 +42,12 @@ study-companion/
 │   └── generate-icons.py
 ├── src/
 │   ├── app/                   # Next.js App Router 入口
-│   │   ├── api/health/route.ts
+│   │   ├── api/
+│   │   │   ├── admin/ai-stats/route.ts
+│   │   │   └── health/route.ts
+│   │   ├── dev/ai-test/       # 开发调试页面
+│   │   │   ├── actions.ts
+│   │   │   └── page.tsx
 │   │   ├── _components/       # 页面级通用组件
 │   │   │   ├── ModuleCard.tsx
 │   │   │   └── ModulePlaceholder.tsx
@@ -55,6 +60,11 @@ study-companion/
 │   │   └── globals.css
 │   ├── generated/prisma/      # Prisma Client 生成产物（勿手动修改）
 │   ├── lib/                   # 全局基础设施与网关
+│   │   ├── ai/                # AI 能力统一网关
+│   │   │   ├── constants.ts
+│   │   │   ├── config.ts
+│   │   │   ├── client.ts
+│   │   │   └── index.ts
 │   │   └── db.ts              # Prisma Client 单例
 │   └── modules/               # 业务模块（当前为空，待按模块填充）
 ├── .env / .env.example
@@ -69,7 +79,7 @@ study-companion/
 - `src/modules/companion`：备考陪伴模块（学习计划、番茄钟、阶段检测）。
 - `src/modules/classroom`：班级 DDL 模块（作业、考试、通知及其截止时间）。
 - `src/modules/graph`：知识图谱模块（知识点节点、关联、复习路径）。
-- `src/lib/ai`：**待创建**，AI 能力统一网关。
+- `src/lib/ai`：AI 能力统一网关（已创建，支持 DeepSeek / Kimi，统一封装调用、JSON 解析、用量统计与重试）。
 - `src/lib/push`：**待创建**，推送能力统一网关。
 
 ## 4. 编码规范
@@ -113,6 +123,10 @@ study-companion/
 - [x] 四个模块入口占位页面：`/recite`、`/companion`、`/classroom`、`/graph`。
 - [x] 首页模块卡片组件 `ModuleCard.tsx` 与占位组件 `ModulePlaceholder.tsx`。
 - [x] 健康检查接口 `/api/health`。
+- [x] 统一 AI 网关 `src/lib/ai/`（DeepSeek 默认、Kimi 复杂任务、OpenAI 兼容、60 秒超时、失败重试 1 次）。
+- [x] `ApiLog` Prisma 模型与迁移，用于记录每次 AI 调用的 token 用量与耗时。
+- [x] 管理接口 `GET /api/admin/ai-stats`，查看累计 AI 用量。
+- [x] 开发调试页面 `/dev/ai-test`，支持输入文本提取要点并展示 token 用量。
 
 ## 6. 待办与已知坑
 

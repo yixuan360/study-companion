@@ -16,3 +16,21 @@ model User {
   name      String?
   createdAt DateTime @default(now())
 }
+
+model ApiLog {
+  id               String   @id @default(uuid())
+  provider         String
+  model            String
+  taskType         String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  durationMs       Int
+  success          Boolean
+  errorMsg         String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([provider, model])
+}
