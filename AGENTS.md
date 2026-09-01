@@ -45,7 +45,10 @@ study-companion/
 │   │   ├── api/
 │   │   │   ├── admin/ai-stats/route.ts
 │   │   │   └── health/route.ts
-│   │   ├── dev/ai-test/       # 开发调试页面
+│   │   ├── dev/ai-test/       # AI 网关调试页面
+│   │   │   ├── actions.ts
+│   │   │   └── page.tsx
+│   │   ├── dev/push-test/     # 推送网关调试页面
 │   │   │   ├── actions.ts
 │   │   │   └── page.tsx
 │   │   ├── _components/       # 页面级通用组件
@@ -65,6 +68,11 @@ study-companion/
 │   │   │   ├── config.ts
 │   │   │   ├── client.ts
 │   │   │   └── index.ts
+│   │   ├── push/              # 推送能力统一网关
+│   │   │   ├── types.ts
+│   │   │   ├── channels/
+│   │   │   │   └── server-chan.ts
+│   │   │   └── index.ts
 │   │   └── db.ts              # Prisma Client 单例
 │   └── modules/               # 业务模块（当前为空，待按模块填充）
 ├── .env                     # 本地环境变量（API Key、数据库地址，不提交）
@@ -80,7 +88,7 @@ study-companion/
 - `src/modules/classroom`：班级 DDL 模块（作业、考试、通知及其截止时间）。
 - `src/modules/graph`：知识图谱模块（知识点节点、关联、复习路径）。
 - `src/lib/ai`：AI 能力统一网关（已创建，支持 DeepSeek / Kimi，统一封装调用、JSON 解析、用量统计与重试）。
-- `src/lib/push`：**待创建**，推送能力统一网关。
+- `src/lib/push`：推送能力统一网关（已创建，当前接入 Server 酱 Turbo，抽象 `PushChannel` 接口，便于后续切换通道）。
 
 ## 4. 编码规范
 
@@ -127,12 +135,15 @@ study-companion/
 - [x] `ApiLog` Prisma 模型与迁移，用于记录每次 AI 调用的 token 用量与耗时。
 - [x] 管理接口 `GET /api/admin/ai-stats`，查看累计 AI 用量。
 - [x] 开发调试页面 `/dev/ai-test`，支持输入文本提取要点并展示 token 用量。
+- [x] 统一推送网关 `src/lib/push/`（Server 酱 Turbo、`PushChannel` 抽象、`pushToUser` 入口、失败不阻塞业务）。
+- [x] 开发调试页面 `/dev/push-test`，一键发送测试推送到微信。
 
 ## 6. 待办与已知坑
 
 > 待后续会话持续更新。
 
-（当前为空）
+- 使用推送前需在 `.env` 中配置 `SERVER_CHAN_SEND_KEY`（Server 酱 Turbo 的 SendKey）。
+- `pushToUser` 当前只支持单个默认 SendKey；未来若需按用户绑定不同 SendKey，可在 `getDefaultSendKey()` 处扩展为按 `userId` 查询数据库并选择对应通道。
 
 ## 7. 协作规则
 
