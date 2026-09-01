@@ -67,7 +67,7 @@ study-companion/
 │   │   │   └── index.ts
 │   │   └── db.ts              # Prisma Client 单例
 │   └── modules/               # 业务模块（当前为空，待按模块填充）
-├── .env / .env.example
+├── .env                     # 本地环境变量（API Key、数据库地址，不提交）
 ├── next.config.ts
 ├── package.json
 └── tsconfig.json
