@@ -34,3 +34,77 @@ model ApiLog {
   @@index([createdAt])
   @@index([provider, model])
 }
+
+enum MaterialSourceType {
+  text
+  image
+  pdf
+}
+
+model Material {
+  id          String             @id @default(uuid())
+  title       String
+  sourceType  MaterialSourceType
+  rawContent  String
+  metadata    Json?
+  createdAt   DateTime           @default(now())
+
+  cards       Card[]
+}
+
+enum CardType {
+  cloze
+  qa
+  judge
+}
+
+enum MasteryLevel {
+  new
+  learning
+  familiar
+  mastered
+}
+
+model Card {
+  id            String       @id @default(uuid())
+  materialId    String
+  material      Material     @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  question      String
+  answer        String
+  hint          String?
+  cardType      CardType
+  mastery       MasteryLevel @default(new)
+  intervalDays  Int          @default(0)
+  nextReviewAt  DateTime     @default(now())
+  reviewCount   Int          @default(0)
+  lapseCount    Int          @default(0)
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+
+  reviewLogs    ReviewLog[]
+
+  @@index([materialId])
+  @@index([nextReviewAt])
+}
+
+enum ReviewResult {
+  forgot
+  hard
+  good
+  easy
+}
+
+model ReviewLog {
+  id           String       @id @default(uuid())
+  cardId       String
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  reviewedAt   DateTime     @default(now())
+  result       ReviewResult
+  userAnswer   String?
+  aiFeedback   String?
+
+  @@index([cardId])
+  @@index([reviewedAt])
+}

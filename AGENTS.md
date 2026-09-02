@@ -36,6 +36,7 @@ study-companion/
 ├── prisma/
 │   ├── schema.prisma          # Prisma 模型定义
 │   ├── migrations/            # 数据库迁移文件
+│   ├── seed.ts                # 数据库种子脚本
 │   └── dev.db                 # 本地 SQLite 数据库
 ├── public/                    # 静态资源、图标
 ├── scripts/                   # 辅助脚本
@@ -44,7 +45,12 @@ study-companion/
 │   ├── app/                   # Next.js App Router 入口
 │   │   ├── api/
 │   │   │   ├── admin/ai-stats/route.ts
-│   │   │   └── health/route.ts
+│   │   │   ├── health/route.ts
+│   │   │   └── recite/
+│   │   │       ├── cards/
+│   │   │       │   ├── batch-create/route.ts
+│   │   │       │   └── [cardId]/route.ts
+│   │   │       └── generate-cards/route.ts
 │   │   ├── dev/ai-test/       # AI 网关调试页面
 │   │   │   ├── actions.ts
 │   │   │   └── page.tsx
@@ -57,7 +63,11 @@ study-companion/
 │   │   ├── classroom/page.tsx
 │   │   ├── companion/page.tsx
 │   │   ├── graph/page.tsx
-│   │   ├── recite/page.tsx
+│   │   ├── recite/
+│   │   │   ├── import/page.tsx          # 文字录入与 AI 制卡
+│   │   │   ├── materials/page.tsx       # 材料列表
+│   │   │   ├── materials/[id]/page.tsx  # 材料详情/卡片列表
+│   │   │   └── page.tsx                 # 背诵模块入口
 │   │   ├── layout.tsx
 │   │   ├── manifest.ts
 │   │   └── globals.css
@@ -137,6 +147,13 @@ study-companion/
 - [x] 开发调试页面 `/dev/ai-test`，支持输入文本提取要点并展示 token 用量。
 - [x] 统一推送网关 `src/lib/push/`（Server 酱 Turbo、`PushChannel` 抽象、`pushToUser` 入口、失败不阻塞业务）。
 - [x] 开发调试页面 `/dev/push-test`，一键发送测试推送到微信。
+- [x] 背诵模块数据库层：`Material`、`Card`、`ReviewLog` 模型及枚举定义，迁移文件 `20260901102816_add_recite_models`，并添加常用查询索引。
+- [x] 数据库种子脚本 `prisma/seed.ts`，包含 1 条示例材料、3 张示例卡片及 1 条复习记录；`prisma.config.ts` 已配置 `migrations.seed`，可通过 `npx prisma db seed` 执行。
+- [x] 背诵模块核心制卡链路：`/recite/import` 文字录入 → AI 制卡 → 预览确认 → 批量入库。
+- [x] API `POST /api/recite/generate-cards`（创建 Material 并调用 AI 网关生成卡片，不自动入库）。
+- [x] API `POST /api/recite/cards/batch-create`（仅保存用户勾选卡片）。
+- [x] API `DELETE /api/recite/cards/[cardId]`（删除单张卡片）。
+- [x] 页面 `/recite/materials` 材料列表与 `/recite/materials/[id]` 卡片详情/删除。
 
 ## 6. 待办与已知坑
 
@@ -144,6 +161,8 @@ study-companion/
 
 - 使用推送前需在 `.env` 中配置 `SERVER_CHAN_SEND_KEY`（Server 酱 Turbo 的 SendKey）。
 - `pushToUser` 当前只支持单个默认 SendKey；未来若需按用户绑定不同 SendKey，可在 `getDefaultSendKey()` 处扩展为按 `userId` 查询数据库并选择对应通道。
+- Prisma 6 使用 `prisma.config.ts` 时会跳过默认的 `.env` 加载，因此配置文件中通过 `import "dotenv/config"` 手动加载环境变量；执行种子命令使用 `npx prisma db seed`。
+- **产品底线**：所有 AI 生成内容必须经过用户预览确认后才能入库，禁止在业务代码中自动保存 AI 输出。
 
 ## 7. 协作规则
 

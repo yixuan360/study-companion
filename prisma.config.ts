@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "prisma/config";
+import "dotenv/config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -12,6 +13,7 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
+    seed: "tsx prisma/seed.ts",
   },
   engine: "classic",
   datasource: {
