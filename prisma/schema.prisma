@@ -79,6 +79,7 @@ model Card {
   nextReviewAt  DateTime     @default(now())
   reviewCount   Int          @default(0)
   lapseCount    Int          @default(0)
+  goodStreak    Int          @default(0)
   metadata      Json?
   createdAt     DateTime     @default(now())
 

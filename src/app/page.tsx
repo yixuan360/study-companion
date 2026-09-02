@@ -1,8 +1,9 @@
+import { getTodayReviewCards } from "@/modules/recite/today";
 import { ModuleCard } from "./_components/ModuleCard";
 
 const modules = [
   {
-    href: "/recite",
+    href: "/recite/review",
     title: "背诵记忆卡",
     description: "卡片式记忆与间隔复习",
     emoji: "🎴",
@@ -31,7 +32,9 @@ const modules = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const { totalCount } = await getTodayReviewCards();
+
   return (
     <main className="min-h-screen bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
       <div className="mx-auto max-w-md sm:max-w-lg">
@@ -45,7 +48,11 @@ export default function Home() {
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {modules.map((m) => (
-            <ModuleCard key={m.href} {...m} />
+            <ModuleCard
+              key={m.href}
+              {...m}
+              badgeCount={m.href === "/recite/review" ? totalCount : undefined}
+            />
           ))}
         </div>
       </div>

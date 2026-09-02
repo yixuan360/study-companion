@@ -50,7 +50,9 @@ study-companion/
 │   │   │       ├── cards/
 │   │   │       │   ├── batch-create/route.ts
 │   │   │       │   └── [cardId]/route.ts
-│   │   │       └── generate-cards/route.ts
+│   │   │       ├── generate-cards/route.ts
+│   │   │       ├── review/route.ts        # 提交复习结果
+│   │   │       └── today/route.ts         # 今日待复习卡片
 │   │   ├── dev/ai-test/       # AI 网关调试页面
 │   │   │   ├── actions.ts
 │   │   │   └── page.tsx
@@ -67,6 +69,7 @@ study-companion/
 │   │   │   ├── import/page.tsx          # 文字录入与 AI 制卡
 │   │   │   ├── materials/page.tsx       # 材料列表
 │   │   │   ├── materials/[id]/page.tsx  # 材料详情/卡片列表
+│   │   │   ├── review/page.tsx          # 今日复习卡片流
 │   │   │   └── page.tsx                 # 背诵模块入口
 │   │   ├── layout.tsx
 │   │   ├── manifest.ts
@@ -84,7 +87,11 @@ study-companion/
 │   │   │   │   └── server-chan.ts
 │   │   │   └── index.ts
 │   │   └── db.ts              # Prisma Client 单例
-│   └── modules/               # 业务模块（当前为空，待按模块填充）
+│   └── modules/               # 业务模块
+│       └── recite/
+│           ├── scheduler.ts     # 艾宾浩斯调度算法纯函数
+│           ├── scheduler.test.ts
+│           └── today.ts         # 今日待复习查询
 ├── .env                     # 本地环境变量（API Key、数据库地址，不提交）
 ├── next.config.ts
 ├── package.json
@@ -94,6 +101,8 @@ study-companion/
 ### 模块划分
 
 - `src/modules/recite`：背诵模块（记忆卡片、间隔重复、背诵提醒）。
+  - `scheduler.ts`：艾宾浩斯调度纯函数。
+  - `today.ts`：今日待复习查询。
 - `src/modules/companion`：备考陪伴模块（学习计划、番茄钟、阶段检测）。
 - `src/modules/classroom`：班级 DDL 模块（作业、考试、通知及其截止时间）。
 - `src/modules/graph`：知识图谱模块（知识点节点、关联、复习路径）。
@@ -154,6 +163,14 @@ study-companion/
 - [x] API `POST /api/recite/cards/batch-create`（仅保存用户勾选卡片）。
 - [x] API `DELETE /api/recite/cards/[cardId]`（删除单张卡片）。
 - [x] 页面 `/recite/materials` 材料列表与 `/recite/materials/[id]` 卡片详情/删除。
+- [x] 背诵模块复习调度算法 `src/modules/recite/scheduler.ts`：艾宾浩斯阶梯 `[1,2,4,7,15,30]`，四档自评（forgot/hard/good/easy）状态流转，mastery 进阶规则，纯函数便于测试。
+- [x] `scheduler.ts` 的 vitest 单元测试，覆盖四档结果、mastery 流转、边界与脏数据。
+- [x] Prisma 迁移 `20260902015423_add_card_good_streak`，为 `Card` 增加 `goodStreak` 字段以支持连续 good/easy 计数。
+- [x] API `GET /api/recite/today`：返回今日待复习卡片与每日上限 10 张的新卡。
+- [x] API `POST /api/recite/review`：入参 `{ cardId, result, userAnswer? }`，走调度算法更新卡片并写 `ReviewLog`。
+- [x] 复习页面 `/recite/review`：卡片流，顶部进度条，挖空高亮，判断题对/错作答，简答题默写输入，四档自评按钮，完成总结页。
+- [x] 首页 `/` 背诵模块卡片显示今日待复习数量，点击直达复习页。
+- [x] 背诵模块入口 `/recite` 更新为复习/材料/录入导航页。
 
 ## 6. 待办与已知坑
 
@@ -163,6 +180,10 @@ study-companion/
 - `pushToUser` 当前只支持单个默认 SendKey；未来若需按用户绑定不同 SendKey，可在 `getDefaultSendKey()` 处扩展为按 `userId` 查询数据库并选择对应通道。
 - Prisma 6 使用 `prisma.config.ts` 时会跳过默认的 `.env` 加载，因此配置文件中通过 `import "dotenv/config"` 手动加载环境变量；执行种子命令使用 `npx prisma db seed`。
 - **产品底线**：所有 AI 生成内容必须经过用户预览确认后才能入库，禁止在业务代码中自动保存 AI 输出。
+- 复习调度测试：
+  - 运行单元测试：`npm test`（仅测试 `scheduler.ts`）。
+  - 手动造今日复习数据：用 Prisma Studio 或 SQL 把目标卡片的 `nextReviewAt` 改为今天内的时间（如 `new Date()`），并确保 `mastery != 'new'`；新卡则保持 `mastery = 'new'`。
+  - 每日新卡上限 `DAILY_NEW_CARD_LIMIT = 10`，在 `src/modules/recite/today.ts` 中配置。
 
 ## 7. 协作规则
 
