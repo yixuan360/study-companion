@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { getTodayReviewCards } from "@/modules/recite/today";
+import { getReviewStats } from "@/modules/recite/stats";
+import { BackLink } from "@/app/_components/BackLink";
+import { SendReminderButton } from "./SendReminderButton";
 
 export default async function RecitePage() {
   const { totalCount } = await getTodayReviewCards();
+  const { totalReviews, streakDays } = await getReviewStats();
 
   const actions = [
     {
@@ -26,12 +30,17 @@ export default async function RecitePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
+    <main className="min-h-svh bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
       <div className="mx-auto max-w-md">
         <div className="mb-8 text-center">
           <div className="mb-3 text-5xl">🎴</div>
           <h1 className="mb-2 text-2xl font-bold text-zinc-900 dark:text-zinc-50">背诵记忆卡</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">艾宾浩斯间隔重复，让记忆更持久</p>
+          {(totalReviews > 0 || streakDays > 0) && (
+            <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+              累计复习 {totalReviews} 次 · 连续复习 {streakDays} 天
+            </p>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -56,13 +65,12 @@ export default async function RecitePage() {
           ))}
         </div>
 
+        <div className="mt-6">
+          <SendReminderButton />
+        </div>
+
         <div className="mt-8 text-center">
-          <Link
-            href="/"
-            className="text-sm text-zinc-500 transition hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-          >
-            ← 返回首页
-          </Link>
+          <BackLink href="/">返回首页</BackLink>
         </div>
       </div>
     </main>

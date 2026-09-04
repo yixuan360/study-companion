@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { BackLink } from "@/app/_components/BackLink";
 
 interface GeneratedCard {
   type: "cloze" | "qa" | "judge";
@@ -21,6 +22,31 @@ const typeLabels: Record<string, string> = {
   qa: "问答",
   judge: "判断",
 };
+
+function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className}`}
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
 
 export default function ReciteImportPage() {
   const router = useRouter();
@@ -68,6 +94,16 @@ export default function ReciteImportPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleReset() {
+    if (cards.length > 0 && !confirm("确定重新录入？当前生成的卡片预览将丢失。")) return;
+    setTitle("");
+    setContent("");
+    setMaterialId(null);
+    setCards([]);
+    setError("");
+    setWarning("");
   }
 
   function toggleAll() {
@@ -123,9 +159,22 @@ export default function ReciteImportPage() {
   const selectedCount = cards.filter((c) => c.selected).length;
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-4 py-6 dark:bg-black sm:px-6">
+    <main className="min-h-svh bg-zinc-50 px-4 py-6 dark:bg-black sm:px-6">
       <div className="mx-auto max-w-2xl">
-        <h1 className="mb-6 text-2xl font-bold text-zinc-900 dark:text-zinc-50">录入新材料</h1>
+        <div className="mb-6">
+          <BackLink href="/recite">返回背诵模块</BackLink>
+        </div>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">录入新材料</h1>
+          {cards.length > 0 && (
+            <button
+              onClick={handleReset}
+              className="rounded-xl px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              重新录入
+            </button>
+          )}
+        </div>
 
         <form onSubmit={handleGenerate} className="space-y-4">
           <div>
@@ -136,7 +185,7 @@ export default function ReciteImportPage() {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：计算机网络第一章"
               disabled={loading || cards.length > 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
           <div>
@@ -147,7 +196,7 @@ export default function ReciteImportPage() {
               rows={12}
               placeholder="在此粘贴笔记、讲义或课本内容..."
               disabled={loading || cards.length > 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-full rounded-xl border border-zinc-200 bg-white p-4 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
           {warning && (
@@ -159,8 +208,9 @@ export default function ReciteImportPage() {
             <button
               type="submit"
               disabled={loading || !title.trim() || !content.trim()}
-              className="w-full rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-base font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
+              {loading && <Spinner />}
               {loading ? "制卡中..." : "开始制卡"}
             </button>
           )}
@@ -184,7 +234,7 @@ export default function ReciteImportPage() {
                   type="checkbox"
                   checked={cards.length > 0 && cards.every((c) => c.selected)}
                   onChange={toggleAll}
-                  className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-5 w-5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
                 />
                 全选/反选
               </label>
@@ -202,12 +252,13 @@ export default function ReciteImportPage() {
               ))}
             </div>
 
-            <div className="sticky bottom-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="sticky bottom-0 rounded-t-2xl border-x border-t border-zinc-200 bg-white p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:rounded-2xl sm:border">
               <button
                 onClick={handleSave}
                 disabled={saving || selectedCount === 0}
-                className="w-full rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-4 text-base font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
+                {saving && <Spinner />}
                 {saving ? "保存中..." : `确认保存 ${selectedCount} 张卡`}
               </button>
             </div>
@@ -232,17 +283,23 @@ function CardPreview({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className={`rounded-xl border p-4 transition ${card.selected ? "border-indigo-200 bg-white dark:border-indigo-900/30 dark:bg-zinc-900" : "border-zinc-200 bg-zinc-50 opacity-70 dark:border-zinc-800 dark:bg-zinc-900/50"}`}>
+    <div
+      className={`rounded-2xl border p-4 transition sm:p-5 ${
+        card.selected
+          ? "border-indigo-200 bg-white dark:border-indigo-900/30 dark:bg-zinc-900"
+          : "border-zinc-200 bg-zinc-50 opacity-70 dark:border-zinc-800 dark:bg-zinc-900/50"
+      }`}
+    >
       <div className="mb-3 flex items-start gap-3">
         <input
           type="checkbox"
           checked={card.selected}
           onChange={onToggle}
-          className="mt-1 h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+          className="mt-1 h-5 w-5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
         />
         <div className="flex-1">
           <div className="mb-2 flex items-center gap-2">
-            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+            <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
               {typeLabels[card.type] ?? card.type}
             </span>
           </div>
@@ -252,24 +309,24 @@ function CardPreview({
                 value={card.question}
                 onChange={(e) => onUpdate("question", e.target.value)}
                 rows={2}
-                className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
               />
               <textarea
                 value={card.answer}
                 onChange={(e) => onUpdate("answer", e.target.value)}
                 rows={2}
-                className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
               />
               <input
                 type="text"
                 value={card.hint || ""}
                 onChange={(e) => onUpdate("hint", e.target.value)}
                 placeholder="提示（可选）"
-                className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
               />
             </div>
           ) : (
-            <div className="space-y-1 text-sm">
+            <div className="space-y-1 text-sm sm:text-base">
               <p className="font-medium text-zinc-900 dark:text-zinc-50">{card.question}</p>
               <p className="text-zinc-600 dark:text-zinc-400">{card.answer}</p>
               {card.hint && <p className="text-xs text-zinc-500 dark:text-zinc-500">提示：{card.hint}</p>}
@@ -280,13 +337,13 @@ function CardPreview({
       <div className="flex justify-end gap-2">
         <button
           onClick={() => setEditing(!editing)}
-          className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
         >
           {editing ? "完成" : "编辑"}
         </button>
         <button
           onClick={onDelete}
-          className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+          className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
         >
           删除
         </button>

@@ -3,7 +3,7 @@ import { ModuleCard } from "./_components/ModuleCard";
 
 const modules = [
   {
-    href: "/recite/review",
+    href: "/recite",
     title: "背诵记忆卡",
     description: "卡片式记忆与间隔复习",
     emoji: "🎴",
@@ -36,7 +36,7 @@ export default async function Home() {
   const { totalCount } = await getTodayReviewCards();
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
+    <main className="min-h-svh bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
       <div className="mx-auto max-w-md sm:max-w-lg">
         <div className="mb-8 text-center">
           <h1 className="mb-2 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -51,7 +51,7 @@ export default async function Home() {
             <ModuleCard
               key={m.href}
               {...m}
-              badgeCount={m.href === "/recite/review" ? totalCount : undefined}
+              badgeCount={m.href === "/recite" ? totalCount : undefined}
             />
           ))}
         </div>

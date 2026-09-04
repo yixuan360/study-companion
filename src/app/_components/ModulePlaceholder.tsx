@@ -7,7 +7,7 @@ interface ModulePlaceholderProps {
 
 export function ModulePlaceholder({ title, emoji }: ModulePlaceholderProps) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
+    <main className="flex min-h-svh flex-col items-center justify-center px-6 text-center">
       <div className="mb-4 text-6xl">{emoji}</div>
       <h1 className="mb-2 text-2xl font-bold text-zinc-900 dark:text-zinc-50">
         {title}
