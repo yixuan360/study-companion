@@ -96,6 +96,101 @@ model TaskCompletion {
   @@index([userId])
 }
 
+enum GraphSourceType {
+  text
+  url
+  screenshot
+  pdf
+}
+
+// 知识图谱：内容源（用户"喂"进来的材料）
+model Source {
+  id         String          @id @default(uuid())
+  title      String
+  sourceType GraphSourceType @default(text)
+  rawContent String
+  url        String?
+  metadata   Json?
+  createdAt  DateTime        @default(now())
+
+  nodeSources NodeSource[]
+
+  @@index([createdAt])
+}
+
+// 知识点节点（SQLite 无标量数组，aliases 存 Json 字符串数组；迁 PG 可换 String[]）
+model GraphNode {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  aliases      Json
+  domain       String
+  summary      String
+  mentionCount Int      @default(1)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  edgesFrom   GraphEdge[]  @relation("fromNode")
+  edgesTo     GraphEdge[]  @relation("toNode")
+  nodeSources NodeSource[]
+
+  @@index([domain])
+}
+
+// 关系边（relation 为简短动词）
+model GraphEdge {
+  id        String    @id @default(uuid())
+  fromNodeId String
+  fromNode  GraphNode @relation("fromNode", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId  String
+  toNode    GraphNode @relation("toNode", fields: [toNodeId], references: [id], onDelete: Cascade)
+  relation  String
+  weight    Int       @default(1)
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@unique([fromNodeId, toNodeId, relation])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+}
+
+// 溯源：节点出自哪篇材料的哪个片段
+model NodeSource {
+  id       String    @id @default(uuid())
+  nodeId   String
+  node     GraphNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  sourceId String
+  source   Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  excerpt  String
+  metadata Json?
+
+  @@unique([nodeId, sourceId])
+  @@index([sourceId])
+}
+
+// 合并待审队列（align 对齐 / conflict 冲突），处理结果写 status
+enum MergeReviewType {
+  align
+  conflict
+}
+
+enum MergeReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+model MergeReview {
+  id        String            @id @default(uuid())
+  type      MergeReviewType
+  payload   Json
+  status    MergeReviewStatus @default(pending)
+  metadata  Json?
+  createdAt DateTime          @default(now())
+
+  @@index([status, type])
+}
+
 model ApiLog {
   id               String   @id @default(uuid())
   provider         String

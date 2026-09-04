@@ -64,6 +64,11 @@ study-companion/
 │   │   │   ├── cron/
 │   │   │   │   ├── classroom-push/route.ts   # 班级任务早晚提醒（需 CRON_SECRET，mode=morning|evening）
 │   │   │   │   └── daily-reminder/route.ts   # 定时复习提醒入口（需 CRON_SECRET）
+│   │   │   │   ├── graph/
+│   │   │   │   ├── data/route.ts            # GET 图谱数据（?domain=，>200 节点只回 mentionCount≥2）
+│   │   │   │   ├── extract/route.ts         # AI 抽取知识点/关系（simple+json，不入库）
+│   │   │   │   ├── ingest/route.ts          # 确认入库（两段式对齐+关系去重+溯源+冲突记录）
+│   │   │   │   └── node/[id]/route.ts       # 节点详情（关联边+来源溯源，抽屉用）
 │   │   │   ├── health/route.ts
 │   │   │   └── recite/
 │   │   │       ├── cards/
@@ -124,6 +129,22 @@ study-companion/
 │   │   │   ├── review/page.tsx          # 今日复习卡片流（两档自评）
 │   │   │   ├── SendReminderButton.tsx   # 手动推送今日复习提醒
 │   │   │   └── page.tsx                 # 背诵模块入口
+│   │   ├── graph/
+│   │   │   ├── _components/GraphTabs.tsx    # 图谱底部 tab 导航（移动端固定底部/桌面顶部横排）
+│   │   │   ├── growth/
+│   │   │   │   ├── page.tsx                 # 成长视图：大数字卡片+30天柱状图+领域饼图
+│   │   │   │   └── GrowthCharts.tsx         # echarts bar+pie（按需引入）
+│   │   │   ├── import/page.tsx              # 喂入页：提炼→预览（可删实体/关系）→入库→合并摘要
+│   │   │   ├── review/
+│   │   │   │   ├── page.tsx                 # 变更审阅队列（pending 冲突列表）
+│   │   │   │   └── ReviewList.tsx           # 保留旧/采用新/两者共存（可加备注）
+│   │   │   ├── sources/
+│   │   │   │   ├── [id]/
+│   │   │   │   │   ├── page.tsx             # 来源详情：原文+提炼快照+溯源片段+删除
+│   │   │   │   │   └── DeleteSourceButton.tsx
+│   │   │   │   └── page.tsx                 # 来源列表
+│   │   │   ├── page.tsx                     # 图谱页：力导向图+工具栏（空态引导）
+│   │   │   └── GraphView.tsx                # ECharts graph（按需引入）+搜索/领域筛选+节点抽屉
 │   │   ├── layout.tsx
 │   │   ├── manifest.ts
 │   │   └── globals.css
@@ -154,11 +175,15 @@ study-companion/
 │       │   ├── stats.ts         # startOfWeek（周一起）、daysUntil、getWeekTasks、getCheckInStreak（连续打卡天数）、toISODate/weekdayLabel
 │       │   ├── weekly.ts        # parseWeeklyReview：周报 AI 输出校验（riskLevel/summary/adjustments/nextWeekTasks）
 │       │   └── memory.ts        # 【记忆包机制】assembleContext(goalId)，详见下方模块划分说明
-│       └── classroom/
-│           ├── actions.ts      # Server Actions：创建身份/建班/加入/保存SendKey/测试推送/退出登录
-│           ├── membership.ts   # 【数据隔离】isMember/requireMembership（非成员 forbidden 403）/forbiddenResponse
-│           ├── tasks.ts        # 任务校验归一化：parseTaskInput/parseExtractedTasks/normalizeDeadlineText/类型与平台映射
-│           └── reminder.ts     # 班级任务早晚提醒推送（按成员 pushKey 逐人推送各自未完成清单）
+│       ├── classroom/
+│       │   ├── actions.ts      # Server Actions：创建身份/建班/加入/保存SendKey/测试推送/退出登录
+│       │   ├── membership.ts   # 【数据隔离】isMember/requireMembership（非成员 forbidden 403）/forbiddenResponse
+│       │   ├── tasks.ts        # 任务校验归一化：parseTaskInput/parseExtractedTasks/normalizeDeadlineText/类型与平台映射
+│       │   └── reminder.ts     # 班级任务早晚提醒推送（按成员 pushKey 逐人推送各自未完成清单）
+│       └── graph/
+│           ├── actions.ts      # getSourceSummaries/deleteSourceAction（mentionCount-1，归零标记待清理）/resolveReviewAction（裁决冲突三选一）
+│           ├── extract.ts      # 抽取 Prompt 构建与 parseExtraction 校验（过滤端点不在实体表的关系）
+│           └── ingest.ts       # 【两段式实体对齐】alignEntity+ingestGraph，详见下方图谱小节
 ├── .env                     # 本地环境变量（API Key、数据库地址，不提交）
 ├── next.config.ts
 ├── package.json
@@ -209,9 +234,23 @@ study-companion/
   4. 未登录访问班级页面统一重定向 `/classroom/identity`，API 返回 401。
 - 关键设计：**任务共享、完成状态个人化**——`ClassTask` 全班一份，`TaskCompletion`（taskId+userId 唯一）记录各人 done/doneAt；`ClassTask.updatedBy` 记录最后修改人。
 - `next.config.ts` 开启了 `experimental.authInterrupts`（为 forbidden() 403 页），升级 Next 时留意该实验配置的变化。
-- `src/modules/graph`：知识图谱模块（知识点节点、关联、复习路径）。
 - `src/lib/ai`：AI 能力统一网关（已创建，支持 DeepSeek / Kimi，统一封装调用、JSON 解析、用量统计与重试）。
 - `src/lib/push`：推送能力统一网关（Server 酱 Turbo，抽象 `PushChannel` 接口；`pushToUser({ sendKey, title, content })` 支持指定 SendKey，不传回落环境变量 `SERVER_CHAN_SEND_KEY`——背诵模块默认通道不受影响）。
+
+### 知识图谱模块（graph）与两段式实体对齐策略
+
+理念：用户只管「喂」知识（`/graph/import` 粘贴文章 → AI 抽取 → 预览确认），系统增量合并进一张持续生长的个人图谱（`/graph` ECharts 力导向图，节点大小=mentionCount、颜色=领域）。
+
+**两段式实体对齐（`src/modules/graph/ingest.ts`，图谱不退化的核心，后续调优重点）**：
+
+- a 段本地候选：对每个新实体，在全部已有节点中按 ①name 精确（大小写不敏感）②aliases 包含 ③name 双向包含（长度≥2 才启用，防止"学习"这类短词误匹配）收集候选。中文场景 SQLite 无大小写不敏感索引，当前全量加载进内存匹配——**节点破千时必须改为候选检索**（domain 过滤 + LIKE 前缀），已列入待办。
+- b 段 AI 裁决：仅对有候选的实体调 AI（simple+json），判定同一概念还是全新概念，返回候选中的节点 id 或 null。Prompt 额外强调「上下位概念不算同一概念、不确定返回 null」（防"卷积神经网络"并进"神经网络"）。并行执行各实体的裁决；AI 失败时保守创建新节点（宁可重复也不错误合并）。
+- 匹配成功 → 复用旧节点（mentionCount+1、别名并集≤20、主名不变）；无候选或判 null → 创建新节点。同一批内同名实体先去重。
+- 关系去重：`@@unique([fromNodeId, toNodeId, relation])`，已存在则 weight+1；端点必须用对齐后的真实节点 id，端点不在实体表的关系被 parseExtraction 过滤（禁止脑补）。
+- 冲突检测（第一版简化）：同节点对上出现语义相反的关系（OPPOSITE_RELATIONS 表：导致/抑制、提升/降低等 12 对）时写 `MergeReview(type=conflict, status=pending)`，payload 带新旧边 id 与原文片段，只记录不阻塞。人工在 `/graph/review` 三选一：保留旧关系（删新边，rejected）/采用新关系（删旧边，approved）/两者共存（加备注，approved）。
+- 溯源：`NodeSource(nodeId+sourceId 唯一)` 记录节点出自哪篇材料；excerpt 优先用关系 evidence，孤立实体用 summary 兜底。来源详情页（`/graph/sources/[id]`）展示提炼快照（Source.metadata 存了当次 entities/relations）与原文片段。
+- 删除来源（保守策略）：节点与边保留（其他来源可能也提到），仅 mentionCount-1；归零节点在 metadata 标 `pendingCleanup: true`（"待清理"），不自动删。
+- 性能临时策略：`GET /api/graph/data` 在节点总数 >200 时只返回 mentionCount≥2 的节点及其边；echarts 按需引入（GraphChart/BarChart/PieChart + CanvasRenderer），移动端边 label 默认隐藏、hover/选中才显示。
 
 ## 4. 编码规范
 
@@ -339,6 +378,20 @@ study-companion/
 - [x] API `GET /api/cron/classroom-push?secret=&mode=morning|evening`：与背诵 daily-reminder 共用 CRON_SECRET；morning 推今日到期、evening 推 24h 内到期（标题「⏰ 明天截止：N 项任务」），按成员各自 pushKey 推各自未完成清单，无待办不推送。
 - [x] 邀请链接 `/classroom/join?code=xxx`：已登录直接入班，未登录先创建身份再自动入班（identity 页透传 code）。
 - [x] 首页 `/` 班级卡片角标「3 天内 N 项到期」：跨所有我加入的班级统计未来 3 天到期且我未完成的任务。
+- [x] 图谱模块数据层：`Source`（sourceType 枚举 text/url/screenshot/pdf，本期仅 text）、`GraphNode`（aliases 存 Json 数组——SQLite 无标量数组，迁 PG 可换 String[]；name 唯一）、`GraphEdge`（from+to+relation 唯一，weight 去重累加）、`NodeSource`（nodeId+sourceId 唯一溯源）、`MergeReview`（type align/conflict，status pending/approved/rejected）。迁移 `20260906110000_add_graph_models`。
+- [x] API `POST /api/graph/extract`：AI（simple+json）按指定 Prompt 抽取 domain/entities/relations，`parseExtraction` 校验并过滤端点不在实体表的关系。
+- [x] API `POST /api/graph/ingest`：事务内两段式实体对齐 + 关系去重 + NodeSource 溯源 + 冲突写 MergeReview，返回新增/复用节点数、新增边数、冲突数、对齐明细。
+- [x] 页面 `/graph/import` 喂入页：标题+大文本域 → 提炼 → 预览（领域标签、实体/关系可删、删除实体后受影响关系自动灰化提示）→ 确认入库 → 合并结果摘要（新增X/复用Y/新增Z + 冲突跳转审阅）。
+- [x] API `GET /api/graph/data?domain=`：节点 symbolSize 按 mentionCount 映射 20-60，边带 relation 与 weight；>200 节点只回 mentionCount≥2（临时策略，有注释）；统计数字与领域列表。
+- [x] API `GET /api/graph/node/[id]`：节点详情（别名/摘要/提及数/关联边含邻居名与方向/来源溯源列表）。
+- [x] 页面 `/graph` 力导向图：ECharts 按需引入（echarts/core + GraphChart + CanvasRenderer），节点拖拽/缩放/点击抽屉、边 label 默认隐藏 hover 显示、领域图例自动配色、领域筛选下拉、搜索定位高亮、统计数字、空态「去喂入第一篇知识」引导。
+- [x] 节点详情底部抽屉：名称/别名/解释/提及次数/关联知识点（可点击跳转高亮）/来源列表（展开看原文片段）。
+- [x] 页面 `/graph/sources` 列表与 `/graph/sources/[id]` 详情：提炼快照（Source.metadata）、关联节点、原文与溯源片段；删除来源（mentionCount-1，归零标 pendingCleanup，节点边保守保留）。
+- [x] 页面 `/graph/review` 审阅队列：pending 冲突（新旧关系对比+来源+依据），三选一裁决（保留旧/采用新/共存+备注）。
+- [x] 页面 `/graph/growth` 成长视图：三张大数字卡片、近 30 天喂入/新增柱状图、领域分布饼图（echarts bar+pie 按需引入）。
+- [x] 图谱模块底部 tab 导航 `GraphTabs`（图谱/喂入/来源/成长；移动端固定底部、桌面顶部横排）。
+- [x] 首页 `/` 图谱卡片角标「N 知识点 · 本周 +M」（空图谱不显示）。
+- [x] 图谱全流程走查通过：两篇同领域文章相同概念正确合并（mentionCount=2、别名并入、重复边 weight+1）、溯源片段正确、冲突进审阅队列并裁决成功。
 
 ## 6. 待办与已知坑
 
@@ -372,6 +425,14 @@ study-companion/
   - 班级任务无「删除」入口（编辑页可改内容），误发布需数据库手动删。
   - AI 提取为非确定性输出：已做 `normalizeDeadlineText` 兼容秒数/T 分隔、`parseClassTaskType` 兼容中英文类型、低置信度标黄；若遇新格式变体在此扩展。
   - Windows 下 Git Bash 用 `curl -d '含中文'` 会发送 GBK 乱码，联调中文 payload 必须写 UTF-8 文件后 `--data-binary @file`。
+- 图谱模块待办与已知坑：
+  - **实体对齐扩展性**：alignEntity 全量加载 GraphNode 到内存匹配，节点破千需改为候选检索（domain 过滤 + LIKE 前缀 + 别名表）；AI 裁决逐实体调用，一篇 15 实体最多 15 次调用（仅命中候选时），量大后考虑批量裁决（一次 prompt 判多个实体）。
+  - `align` 类型 MergeReview 已建未使用（本期只有 conflict）；"待清理"（pendingCleanup）节点仅标记，无清理页。
+  - 关系方向不归一：A—包含→B 与 B—属于→A 会存成两条边（语义上互逆），后续可加互逆关系归一（属于/包含、导致/源于等）。
+  - `GET /api/graph/data` 的 >200 节点阈值策略在 domain 筛选时按筛选后总数判断，注意感知差异；echarts 容器必须显式高度。
+  - Prisma SQLite 不支持 String[]，GraphNode.aliases 用 Json 数组存储（读写用 `readAliases`/set 数组），迁 PostgreSQL 时建议改为 String[]。
+  - 重启 dev server 的时机：`prisma migrate`/`generate` 之后必须重启，否则 db.ts 的全局 Prisma 单例仍是旧模型（报 "Cannot read properties of undefined (reading 'findMany')"）。
+  - react-hooks 编译器 lint（purity）禁止组件体直接调 Date.now()/Math.random()——把含非纯调用的数据组装抽到组件外的普通函数。
 - `.env` 中 `KIMI_API_KEY` 未配置时，complex 任务自动回退 DeepSeek（控制台有 warning）；AI 网关 60 秒超时对长规划可能偏紧，若频繁超时可考虑调大。
 - `.env` 已配置 `CRON_SECRET=dev-local-secret-2026`（本地联调值）。本机 crontab 配置（Windows 用任务计划程序或 WSL crontab，URL 前缀按部署地址替换）：
   ```

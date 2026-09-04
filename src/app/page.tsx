@@ -89,11 +89,22 @@ async function getClassroomBadge(): Promise<string | undefined> {
   return todoCount > 0 ? `3 天内 ${todoCount} 项到期` : undefined;
 }
 
+/** 图谱角标：知识点总数 + 近 7 天新增（空图谱不显示） */
+async function getGraphBadge(): Promise<string | undefined> {
+  const nodeCount = await prisma.graphNode.count();
+  if (nodeCount === 0) return undefined;
+  const weekNew = await prisma.graphNode.count({
+    where: { createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+  });
+  return `${nodeCount} 知识点 · 本周 +${weekNew}`;
+}
+
 export default async function Home() {
   const { totalCount } = await getTodayReviewCards();
-  const [companionBadge, classroomBadge] = await Promise.all([
+  const [companionBadge, classroomBadge, graphBadge] = await Promise.all([
     getCompanionBadge(),
     getClassroomBadge(),
+    getGraphBadge(),
   ]);
 
   return (
@@ -118,7 +129,9 @@ export default async function Home() {
                   ? companionBadge
                   : m.href === "/classroom"
                     ? classroomBadge
-                    : undefined
+                    : m.href === "/graph"
+                      ? graphBadge
+                      : undefined
               }
             />
           ))}
