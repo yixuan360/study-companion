@@ -14,7 +14,86 @@ datasource db {
 model User {
   id        String   @id @default(uuid())
   name      String?
+  studentNo String?
+  pushKey   String?
+  // MVP 轻量账号体系：sessionToken 存 httpOnly cookie，无密码注册，未来可换 NextAuth
+  sessionToken String? @unique
   createdAt DateTime @default(now())
+}
+
+enum ClassTaskSourceType {
+  text
+  screenshot
+}
+
+enum ClassTaskType {
+  homework
+  exam
+  activity
+  notice
+}
+
+model Classroom {
+  id         String   @id @default(uuid())
+  name       String
+  inviteCode String   @unique
+  creatorId  String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  members ClassroomMember[]
+  tasks   ClassTask[]
+
+  @@index([creatorId])
+}
+
+model ClassroomMember {
+  id          String    @id @default(uuid())
+  classroomId String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  // userId 为逻辑外键（不设 FK 约束），用户体系为 MVP 轻量方案
+  userId      String
+  joinedAt    DateTime  @default(now())
+  metadata    Json?
+
+  @@unique([classroomId, userId])
+  @@index([userId])
+}
+
+model ClassTask {
+  id          String             @id @default(uuid())
+  classroomId String
+  classroom   Classroom          @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  title       String
+  detail      String
+  platform    String
+  course      String?
+  deadline    DateTime
+  sourceType  ClassTaskSourceType @default(text)
+  type        ClassTaskType
+  createdBy   String
+  updatedBy   String?
+  metadata    Json?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  completions TaskCompletion[]
+
+  @@index([classroomId, deadline])
+}
+
+model TaskCompletion {
+  id       String    @id @default(uuid())
+  taskId   String
+  task     ClassTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId   String
+  done     Boolean   @default(false)
+  doneAt   DateTime?
+  metadata Json?
+
+  @@unique([taskId, userId])
+  @@index([userId])
 }
 
 model ApiLog {

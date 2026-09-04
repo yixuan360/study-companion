@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getTodayReviewCards } from "@/modules/recite/today";
 import { addDays, startOfToday } from "@/modules/companion/plan";
 import { daysUntil } from "@/modules/companion/stats";
+import { getCurrentUser } from "@/lib/auth";
 import { ModuleCard } from "./_components/ModuleCard";
 
 const modules = [
@@ -56,9 +57,44 @@ async function getCompanionBadge(): Promise<string | undefined> {
   return `剩 ${daysLeft} 天 · 今日 ${doneCount}/${todayTasks.length}`;
 }
 
+/** 班级角标：未来 3 天内到期、且我未完成的任务数（跨所有我加入的班级） */
+async function getClassroomBadge(): Promise<string | undefined> {
+  const user = await getCurrentUser();
+  if (!user) return undefined;
+
+  const memberships = await prisma.classroomMember.findMany({
+    where: { userId: user.id },
+    select: { classroomId: true },
+  });
+  if (memberships.length === 0) return undefined;
+
+  const now = new Date();
+  const inThreeDays = new Date(now.getTime() + 3 * 86_400_000);
+  const tasks = await prisma.classTask.findMany({
+    where: {
+      classroomId: { in: memberships.map((m) => m.classroomId) },
+      deadline: { gte: now, lt: inThreeDays },
+    },
+    select: { id: true },
+  });
+  if (tasks.length === 0) return undefined;
+
+  const completions = await prisma.taskCompletion.findMany({
+    where: { userId: user.id, done: true, taskId: { in: tasks.map((t) => t.id) } },
+    select: { taskId: true },
+  });
+  const doneIds = new Set(completions.map((c) => c.taskId));
+  const todoCount = tasks.filter((t) => !doneIds.has(t.id)).length;
+
+  return todoCount > 0 ? `3 天内 ${todoCount} 项到期` : undefined;
+}
+
 export default async function Home() {
   const { totalCount } = await getTodayReviewCards();
-  const companionBadge = await getCompanionBadge();
+  const [companionBadge, classroomBadge] = await Promise.all([
+    getCompanionBadge(),
+    getClassroomBadge(),
+  ]);
 
   return (
     <main className="min-h-svh bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
@@ -77,7 +113,13 @@ export default async function Home() {
               key={m.href}
               {...m}
               badgeCount={m.href === "/recite" ? totalCount : undefined}
-              badgeText={m.href === "/companion" ? companionBadge : undefined}
+              badgeText={
+                m.href === "/companion"
+                  ? companionBadge
+                  : m.href === "/classroom"
+                    ? classroomBadge
+                    : undefined
+              }
             />
           ))}
         </div>

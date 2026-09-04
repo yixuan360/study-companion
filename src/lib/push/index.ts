@@ -8,21 +8,22 @@ function getDefaultSendKey(): string | undefined {
 }
 
 /**
- * Push a message to the default recipient.
+ * 推送到指定用户。
  *
- * MVP: The application only supports a single owner, so we read the SendKey
- * directly from `SERVER_CHAN_SEND_KEY`. In the future this can be extended to:
- * - accept a `userId` argument;
- * - look up the user's bound SendKey (and preferred channel) from the database;
- * - instantiate the matching `PushChannel` and send.
+ * - 传入 `sendKey`：推送到该 SendKey 对应的微信（如班级成员在 /classroom/settings 绑定的 key）。
+ * - 不传：回落到环境变量 `SERVER_CHAN_SEND_KEY`（应用所有者的默认通道，背诵模块提醒走这条路）。
+ *
+ * 未来扩展：按 userId 查库选通道、支持更多 PushChannel 实现。
  */
-export async function pushToUser(message: PushMessage): Promise<PushResult> {
-  const sendKey = getDefaultSendKey();
+export async function pushToUser(
+  message: PushMessage & { sendKey?: string }
+): Promise<PushResult> {
+  const sendKey = message.sendKey || getDefaultSendKey();
   if (!sendKey) {
-    console.error("[push] SERVER_CHAN_SEND_KEY is not configured");
+    console.error("[push] sendKey is required (message.sendKey or SERVER_CHAN_SEND_KEY)");
     return {
       success: false,
-      error: "SERVER_CHAN_SEND_KEY is not configured",
+      error: "sendKey is required (message.sendKey or SERVER_CHAN_SEND_KEY)",
       provider: "server-chan",
     };
   }

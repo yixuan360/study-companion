@@ -45,6 +45,14 @@ study-companion/
 │   ├── app/                   # Next.js App Router 入口
 │   │   ├── api/
 │   │   │   ├── admin/ai-stats/route.ts
+│   │   │   ├── classroom/
+│   │   │   │   └── [id]/
+│   │   │   │       └── tasks/
+│   │   │   │           ├── extract/route.ts        # AI 提取通知中的任务（不入库）
+│   │   │   │           ├── [taskId]/
+│   │   │   │       │   ├── route.ts                # PATCH 成员编辑任务（老师改期）
+│   │   │   │       │   └── toggle/route.ts         # 切换当前用户自己的完成状态
+│   │   │   │           └── route.ts                # POST 确认发布（批量入库）
 │   │   │   ├── companion/
 │   │   │   │   ├── daily-feedback/route.ts  # AI 今日总结（simple，注入记忆包）
 │   │   │   │   ├── generate-plan/route.ts   # AI 生成阶段计划+第一周任务（不入库）
@@ -54,6 +62,7 @@ study-companion/
 │   │   │   │       ├── [taskId]/route.ts    # PATCH 打卡：done/skipped/pending + resultNote
 │   │   │   │       └── batch-create/route.ts # 下周任务确认入库（weekStart+day 计算 dueDate）
 │   │   │   ├── cron/
+│   │   │   │   ├── classroom-push/route.ts   # 班级任务早晚提醒（需 CRON_SECRET，mode=morning|evening）
 │   │   │   │   └── daily-reminder/route.ts   # 定时复习提醒入口（需 CRON_SECRET）
 │   │   │   ├── health/route.ts
 │   │   │   └── recite/
@@ -77,7 +86,23 @@ study-companion/
 │   │   │   ├── BackLink.tsx           # 统一的「← 返回」导航链接
 │   │   │   ├── ModuleCard.tsx
 │   │   │   └── ModulePlaceholder.tsx
-│   │   ├── classroom/page.tsx
+│   │   ├── classroom/
+│   │   │   ├── [id]/
+│   │   │   │   ├── tasks/[taskId]/
+│   │   │   │   │   ├── page.tsx              # 任务编辑页（显示录入人/最后修改人）
+│   │   │   │   │   └── TaskEditForm.tsx
+│   │   │   │   ├── page.tsx                  # 班级空间：邀请码/成员/任务流（服务端取数）
+│   │   │   │   ├── InviteCodeCard.tsx        # 邀请码+邀请链接一键复制
+│   │   │   │   └── TaskSection.tsx           # 录入区（AI提取/预览/发布）+任务清单+筛选
+│   │   │   ├── identity/
+│   │   │   │   ├── page.tsx                  # 创建身份（支持 ?code= 邀请自动入班）
+│   │   │   │   └── IdentityForm.tsx
+│   │   │   ├── join/
+│   │   │   │   ├── page.tsx                  # 邀请链接落地页（自动入班）
+│   │   │   │   └── JoinClient.tsx
+│   │   │   ├── settings/                     # 个人设置：绑定 Server酱 SendKey+测试推送
+│   │   │   ├── page.tsx                      # 班级列表+创建+加入（?error=invalid-code 提示）
+│   │   │   └── CreateJoinForms.tsx
 │   │   ├── companion/
 │   │   │   ├── new/
 │   │   │   │   ├── page.tsx                 # 目标初始化两步向导
@@ -114,6 +139,7 @@ study-companion/
 │   │   │   ├── channels/
 │   │   │   │   └── server-chan.ts
 │   │   │   └── index.ts
+│   │   ├── auth.ts            # 轻量账号：getCurrentUser()/sessionToken httpOnly cookie 30 天（MVP，未来可换 NextAuth）
 │   │   └── db.ts              # Prisma Client 单例
 │   └── modules/               # 业务模块
 │       ├── recite/
@@ -123,11 +149,16 @@ study-companion/
 │       │   ├── scheduler.test.ts
 │       │   ├── stats.ts         # 累计复习次数与连续天数统计
 │       │   └── today.ts         # 今日待复习查询（支持 materialId 过滤与新卡上限）
-│       └── companion/
-│           ├── plan.ts          # 计划类型/校验（parsePlan）/日期计算纯函数
-│           ├── stats.ts         # startOfWeek（周一起）、daysUntil、getWeekTasks、getCheckInStreak（连续打卡天数）、toISODate/weekdayLabel
-│           ├── weekly.ts        # parseWeeklyReview：周报 AI 输出校验（riskLevel/summary/adjustments/nextWeekTasks）
-│           └── memory.ts        # 【记忆包机制】assembleContext(goalId)，详见下方模块划分说明
+│       ├── companion/
+│       │   ├── plan.ts          # 计划类型/校验（parsePlan）/日期计算纯函数
+│       │   ├── stats.ts         # startOfWeek（周一起）、daysUntil、getWeekTasks、getCheckInStreak（连续打卡天数）、toISODate/weekdayLabel
+│       │   ├── weekly.ts        # parseWeeklyReview：周报 AI 输出校验（riskLevel/summary/adjustments/nextWeekTasks）
+│       │   └── memory.ts        # 【记忆包机制】assembleContext(goalId)，详见下方模块划分说明
+│       └── classroom/
+│           ├── actions.ts      # Server Actions：创建身份/建班/加入/保存SendKey/测试推送/退出登录
+│           ├── membership.ts   # 【数据隔离】isMember/requireMembership（非成员 forbidden 403）/forbiddenResponse
+│           ├── tasks.ts        # 任务校验归一化：parseTaskInput/parseExtractedTasks/normalizeDeadlineText/类型与平台映射
+│           └── reminder.ts     # 班级任务早晚提醒推送（按成员 pushKey 逐人推送各自未完成清单）
 ├── .env                     # 本地环境变量（API Key、数据库地址，不提交）
 ├── next.config.ts
 ├── package.json
@@ -163,10 +194,24 @@ study-companion/
 - **所有备考相关 AI 调用一律调用 `assembleContext(goalId)` 拿记忆包，拼进 `chat()` 的 system 消息**（配合 `MEMORY_PACK_HEADER`），禁止各自重新拼目标信息。已接入：今日总结 `daily-feedback`、周报 `weekly-review`。
 - 后续新增 AI 能力（备考答疑、薄弱点提炼、阶段检测、推送文案等）直接复用此函数；记忆包内容演进（错题分布、知识图谱覆盖率等）只改 memory.ts，不动调用方。
 - `goalId` 不存在时抛错；当前阶段判定逻辑与周报页保持一致（本会话实现的 `/companion/plan` 用 `startDate <= today <= endDate` 判定 isCurrent）。
-- `src/modules/classroom`：班级 DDL 模块（作业、考试、通知及其截止时间）。
+
+### 班级模块（classroom）与数据隔离纪律
+
+- `src/modules/classroom`：班级作业共享模块（一人录入、全班受益）。
+  - `actions.ts`：Server Actions——`createIdentityAction`（昵称+学号建身份，签发 sessionToken cookie）、`createClassroomAction`（8 位邀请码，创建者自动入班）、`joinClassroomAction`/`joinByInviteCodeAction`（邀请码/邀请链接入班）、`updatePushKeyAction`/`sendTestPushAction`（绑定并测试 Server酱）、`signOutAction`（清 cookie）。
+  - `membership.ts`：**数据隔离唯一入口**——`isMember`（查成员关系）、`requireMembership`（页面用，非成员触发 forbidden() 渲染 403 页，需 `next.config.ts` 的 `experimental.authInterrupts`）、`forbiddenResponse`（API 用，HTTP 403 JSON）。
+  - `tasks.ts`：任务输入校验与归一化。`normalizeDeadlineText` 兼容 AI 输出的 `HH:mm:ss`/ISO `T` 分隔并截断到分钟；`parseClassTaskType` 同时接受中文标签（作业/考试/活动/通知）和枚举键。
+  - `reminder.ts`：`sendClassroomTaskPush(mode)`——morning 推今日到期、evening 推未来 24h 到期，只推绑定 pushKey 成员的各自未完成任务，无待办不推送。
+- **数据隔离纪律（多租户安全底线，所有 classroom 代码必须遵守）**：
+  1. 所有查询必须带 `classroomId` 条件，禁止无班级过滤的全表查询；
+  2. 所有写操作（发布/编辑/打卡）前必须经 `isMember`/`requireMembership` 校验当前用户是该班级成员，否则 403；
+  3. 任务编辑查询用 `findFirst({ where: { id, classroomId } })` 而非按 id 直取，防止跨班级越权访问；
+  4. 未登录访问班级页面统一重定向 `/classroom/identity`，API 返回 401。
+- 关键设计：**任务共享、完成状态个人化**——`ClassTask` 全班一份，`TaskCompletion`（taskId+userId 唯一）记录各人 done/doneAt；`ClassTask.updatedBy` 记录最后修改人。
+- `next.config.ts` 开启了 `experimental.authInterrupts`（为 forbidden() 403 页），升级 Next 时留意该实验配置的变化。
 - `src/modules/graph`：知识图谱模块（知识点节点、关联、复习路径）。
 - `src/lib/ai`：AI 能力统一网关（已创建，支持 DeepSeek / Kimi，统一封装调用、JSON 解析、用量统计与重试）。
-- `src/lib/push`：推送能力统一网关（已创建，当前接入 Server 酱 Turbo，抽象 `PushChannel` 接口，便于后续切换通道）。
+- `src/lib/push`：推送能力统一网关（Server 酱 Turbo，抽象 `PushChannel` 接口；`pushToUser({ sendKey, title, content })` 支持指定 SendKey，不传回落环境变量 `SERVER_CHAN_SEND_KEY`——背诵模块默认通道不受影响）。
 
 ## 4. 编码规范
 
@@ -201,6 +246,17 @@ study-companion/
 
 - 移动端优先（mobile-first）。
 - 默认按小屏布局实现，再逐步增强到桌面端。
+
+### 4.5 轻量账号体系（MVP）
+
+- 无密码注册：`/classroom/identity` 填昵称（必填）+学号（选填）即创建 `User`，`sessionToken`（uuid）写入 httpOnly cookie（30 天，SameSite=Lax）。
+- 服务端统一用 `src/lib/auth.ts` 的 `getCurrentUser()` 获取当前用户（返回 `User | null`）；未来替换 NextAuth 时只需保持该函数签名。
+- Cookie 读写只允许出现在 Server Actions / Route Handlers 中。
+
+### 4.6 数据隔离纪律（多租户安全底线）
+
+- 班级模块所有查询必须带 `classroomId` 条件；所有写操作前必须校验当前用户是该班级成员，否则 403（页面 `forbidden()` 渲染 403 页 / API 返回 403 JSON）。
+- 校验统一走 `src/modules/classroom/membership.ts`，禁止在业务代码里手写成员判断。
 
 ## 5. 已完成清单
 
@@ -268,6 +324,21 @@ study-companion/
 - [x] 页面 `/companion/plan` 周视图：阶段总览（当前阶段高亮）、本周任务日历（周一~周日分组、今天高亮、已完成打勾/跳过灰化、备注内联显示）、周报区（进度风险灯 绿/黄/红 + 周报卡片 + 下周计划确认入库按钮，已入库显示 ✓）；多目标时顶部切换（`?goalId=`）。
 - [x] 首页 `/` 陪伴模块卡片显示角标「剩 N 天 · 今日 x/y」（取最近截止的 active 目标 + 所有 active 目标今日任务完成数）；`ModuleCard` 新增 `badgeText` 自定义角标支持。
 - [x] `/companion` 首页新增「今日任务」「周计划与周报」两个快捷入口卡片（今日任务入口带完成数摘要）。
+- [x] 班级模块数据层：`Classroom`（inviteCode 唯一索引）、`ClassroomMember`（classroomId+userId 联合唯一）、`ClassTask`（含枚举 `ClassTaskSourceType` text/screenshot、`ClassTaskType` homework/exam/activity/notice、`updatedBy` 最后修改人）、`TaskCompletion`（taskId+userId 联合唯一，任务共享但完成状态个人化）；`User` 增加 `studentNo`/`pushKey`/`sessionToken`（唯一）。迁移 `20260905113000_add_classroom_models`、`20260905120000_add_class_task_updated_by`。
+- [x] 轻量账号体系：`src/lib/auth.ts`（getCurrentUser/cookie 签发，MVP 注释说明未来可换 NextAuth）；`/classroom/identity` 创建身份页（昵称必填+学号选填，支持 `?code=` 邀请自动入班）。
+- [x] 页面 `/classroom`：我的班级列表 + 创建班级（Server Action，邀请码 8 位去易混淆字符生成）+ 加入班级（邀请码）+ 无效邀请码错误提示。
+- [x] 页面 `/classroom/[id]` 班级空间：邀请码+邀请链接一键复制（含 execCommand 降级）、成员列表（班长/我角标）、任务流。
+- [x] 数据隔离：`membership.ts` + 页面 `forbidden()` 真实 403（`next.config.ts` 开启 `experimental.authInterrupts`，新增 `app/forbidden.tsx`）+ API 403 JSON；未登录统一重定向创建身份页。
+- [x] API `POST /api/classroom/[id]/tasks/extract`：AI（simple+json）按指定 Prompt 提取通知中的任务（相对时间换算、低置信度标注），只解析不入库；Prompt 额外注入本地日期+星期锚点避免 UTC 日期偏差。
+- [x] API `POST /api/classroom/[id]/tasks`（确认发布批量入库）、`PATCH .../tasks/[taskId]`（任何成员可编辑，记录 updatedBy）、`POST .../tasks/[taskId]/toggle`（切换当前用户自己的 TaskCompletion）。
+- [x] 班级空间任务流：按 deadline 升序、逾期未完成置顶标「已逾期」、三色预警（<24h 红/<3天黄/其余绿，含「还剩X天/小时」）、平台/课程/类型标签、录入人昵称、我的完成复选框；全部/未完成/已完成筛选。
+- [x] 录入区：大文本域+智能提取 → 提取结果卡片预览（全部字段可编辑、置信度<0.6 标黄「时间待确认」）→ 确认发布；聚焦时尝试读取剪贴板（需授权，失败静默），检测到内容弹「是否提取」；移动端录入按钮固定底部+底部弹层。
+- [x] 任务编辑页 `/classroom/[id]/tasks/[taskId]`：全部字段可改（老师改期场景），显示录入人+最后修改人。
+- [x] 推送网关升级：`pushToUser({ sendKey, title, content })` 支持指定 SendKey，不传回落 `SERVER_CHAN_SEND_KEY`（背诵模块不受影响）。
+- [x] 页面 `/classroom/settings` 个人设置：绑定 Server酱 SendKey（含获取教程+SCT 格式校验）+发送测试消息+展示昵称/学号/已加入班级；`signOutAction` 清除身份。
+- [x] API `GET /api/cron/classroom-push?secret=&mode=morning|evening`：与背诵 daily-reminder 共用 CRON_SECRET；morning 推今日到期、evening 推 24h 内到期（标题「⏰ 明天截止：N 项任务」），按成员各自 pushKey 推各自未完成清单，无待办不推送。
+- [x] 邀请链接 `/classroom/join?code=xxx`：已登录直接入班，未登录先创建身份再自动入班（identity 页透传 code）。
+- [x] 首页 `/` 班级卡片角标「3 天内 N 项到期」：跨所有我加入的班级统计未来 3 天到期且我未完成的任务。
 
 ## 6. 待办与已知坑
 
@@ -293,7 +364,20 @@ study-companion/
   - 首页陪伴角标只显示最早截止目标的倒计时 + 全部 active 目标今日完成数，多目标时未按目标拆分。
   - 打卡成功后依赖 `router.refresh()` 重新取数，无乐观更新；任务量大时可优化。
 - AI 生成计划的已知行为：模型可能把「差距评估 3 条以内」输出为字符串数组，`parsePlan` 已兼容两种形态；Prompt 中要求同一天任务 minutes 总和不超过每日可投入时间。周报 Prompt 要求 nextWeekTasks day 1-7 对应下周一到下周日，day 与 dueDate 的换算统一在 `tasks/batch-create` 服务端做。
+- 班级模块上线（账号+空间+AI 提取任务流+推送），剩余待办与已知点：
+  - `ClassTask.sourceType` 的 screenshot（截图提取）本期未实现；录入区暂只支持文本粘贴。
+  - `src/lib/auth.ts` 为单设备单 token（重新创建身份会使旧 token 失效）、无找回；多人试用通过"不同浏览器/无痕窗口=不同身份"隔离。
+  - 邀请码永不过期且无退出班级功能；试用中误加错班需数据库手动删 `ClassroomMember`。
+  - 早晚推送依赖外部 cron 触发 `/api/cron/classroom-push`，本机 crontab 示例见下；Server酱免费版 5 条/分钟、同内容可能被去重。
+  - 班级任务无「删除」入口（编辑页可改内容），误发布需数据库手动删。
+  - AI 提取为非确定性输出：已做 `normalizeDeadlineText` 兼容秒数/T 分隔、`parseClassTaskType` 兼容中英文类型、低置信度标黄；若遇新格式变体在此扩展。
+  - Windows 下 Git Bash 用 `curl -d '含中文'` 会发送 GBK 乱码，联调中文 payload 必须写 UTF-8 文件后 `--data-binary @file`。
 - `.env` 中 `KIMI_API_KEY` 未配置时，complex 任务自动回退 DeepSeek（控制台有 warning）；AI 网关 60 秒超时对长规划可能偏紧，若频繁超时可考虑调大。
+- `.env` 已配置 `CRON_SECRET=dev-local-secret-2026`（本地联调值）。本机 crontab 配置（Windows 用任务计划程序或 WSL crontab，URL 前缀按部署地址替换）：
+  ```
+  0 8 * * * curl -s "http://localhost:3000/api/cron/classroom-push?secret=dev-local-secret-2026&mode=morning"
+  0 20 * * * curl -s "http://localhost:3000/api/cron/classroom-push?secret=dev-local-secret-2026&mode=evening"
+  ```
 - dev server 运行期间执行 `npx prisma generate` 可能因 query engine dll 被占用报 EPERM，且可能卡死 dev server（本次出现，重启后恢复）；建议 generate 前先停 dev server。
 
 ## 7. 协作规则
