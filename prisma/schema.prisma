@@ -109,3 +109,92 @@ model ReviewLog {
   @@index([cardId])
   @@index([reviewedAt])
 }
+
+enum GoalCategory {
+  exam
+  project
+  habit
+}
+
+enum GoalStatus {
+  active
+  done
+  archived
+}
+
+enum TaskStatus {
+  pending
+  done
+  skipped
+}
+
+model Goal {
+  id           String       @id @default(uuid())
+  title        String
+  category     GoalCategory
+  deadline     DateTime
+  dailyMinutes Int
+  status       GoalStatus   @default(active)
+  userContext  String
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+
+  phases        Phase[]
+  tasks         Task[]
+  weeklyReports WeeklyReport[]
+
+  @@index([status])
+}
+
+model Phase {
+  id        String   @id @default(uuid())
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  focus     String
+  order     Int
+  metadata  Json?
+
+  tasks Task[]
+
+  @@index([goalId])
+}
+
+model Task {
+  id         String     @id @default(uuid())
+  goalId     String
+  goal       Goal       @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  phaseId    String?
+  phase      Phase?     @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+
+  title      String
+  detail     String
+  estMinutes Int
+  dueDate    DateTime
+  status     TaskStatus @default(pending)
+  resultNote String?
+  doneAt     DateTime?
+  metadata   Json?
+  createdAt  DateTime   @default(now())
+
+  @@index([goalId, dueDate])
+  @@index([status])
+}
+
+model WeeklyReport {
+  id             String   @id @default(uuid())
+  goalId         String
+  goal           Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  weekStart      DateTime
+  completionRate Float
+  aiSummary      String
+  adjustments    String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([goalId, weekStart])
+}

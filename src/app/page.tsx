@@ -1,4 +1,7 @@
+import { prisma } from "@/lib/db";
 import { getTodayReviewCards } from "@/modules/recite/today";
+import { addDays, startOfToday } from "@/modules/companion/plan";
+import { daysUntil } from "@/modules/companion/stats";
 import { ModuleCard } from "./_components/ModuleCard";
 
 const modules = [
@@ -32,8 +35,30 @@ const modules = [
   },
 ];
 
+async function getCompanionBadge(): Promise<string | undefined> {
+  const today = startOfToday();
+  const goals = await prisma.goal.findMany({
+    where: { status: "active" },
+    orderBy: { deadline: "asc" },
+  });
+  if (goals.length === 0) return undefined;
+
+  const todayTasks = await prisma.task.findMany({
+    where: {
+      goalId: { in: goals.map((g) => g.id) },
+      dueDate: { gte: today, lt: addDays(today, 1) },
+    },
+    select: { status: true },
+  });
+  const doneCount = todayTasks.filter((t) => t.status === "done").length;
+  const daysLeft = Math.max(0, daysUntil(goals[0].deadline, today));
+
+  return `剩 ${daysLeft} 天 · 今日 ${doneCount}/${todayTasks.length}`;
+}
+
 export default async function Home() {
   const { totalCount } = await getTodayReviewCards();
+  const companionBadge = await getCompanionBadge();
 
   return (
     <main className="min-h-svh bg-zinc-50 px-4 py-10 dark:bg-black sm:px-6">
@@ -52,6 +77,7 @@ export default async function Home() {
               key={m.href}
               {...m}
               badgeCount={m.href === "/recite" ? totalCount : undefined}
+              badgeText={m.href === "/companion" ? companionBadge : undefined}
             />
           ))}
         </div>

@@ -45,6 +45,14 @@ study-companion/
 │   ├── app/                   # Next.js App Router 入口
 │   │   ├── api/
 │   │   │   ├── admin/ai-stats/route.ts
+│   │   │   ├── companion/
+│   │   │   │   ├── daily-feedback/route.ts  # AI 今日总结（simple，注入记忆包）
+│   │   │   │   ├── generate-plan/route.ts   # AI 生成阶段计划+第一周任务（不入库）
+│   │   │   │   ├── goals/route.ts           # 预览确认后入库（Goal+Phases+第一周Tasks）
+│   │   │   │   ├── weekly-review/route.ts   # AI 周报（complex，?goalId=，入 WeeklyReport 库）
+│   │   │   │   └── tasks/
+│   │   │   │       ├── [taskId]/route.ts    # PATCH 打卡：done/skipped/pending + resultNote
+│   │   │   │       └── batch-create/route.ts # 下周任务确认入库（weekStart+day 计算 dueDate）
 │   │   │   ├── cron/
 │   │   │   │   └── daily-reminder/route.ts   # 定时复习提醒入口（需 CRON_SECRET）
 │   │   │   ├── health/route.ts
@@ -70,7 +78,17 @@ study-companion/
 │   │   │   ├── ModuleCard.tsx
 │   │   │   └── ModulePlaceholder.tsx
 │   │   ├── classroom/page.tsx
-│   │   ├── companion/page.tsx
+│   │   ├── companion/
+│   │   │   ├── new/
+│   │   │   │   ├── page.tsx                 # 目标初始化两步向导
+│   │   │   │   └── preview/page.tsx         # 计划预览（阶段名/任务可编辑删除，确认入库）
+│   │   │   ├── plan/
+│   │   │   │   ├── page.tsx                 # 周视图：阶段总览+本周日历+周报（服务端取数）
+│   │   │   │   └── PlanClient.tsx           # 周报生成/风险灯/下周计划确认入库（支持 ?goalId= 切换）
+│   │   │   ├── today/
+│   │   │   │   ├── page.tsx                 # 今日任务页（服务端取数，按目标分组）
+│   │   │   │   └── TodayClient.tsx          # 打卡（完成/跳过+备注）、AI 今日总结
+│   │   │   └── page.tsx                     # 陪伴模块首页（引导/目标卡片/今日任务与周计划入口）
 │   │   ├── graph/page.tsx
 │   │   ├── recite/
 │   │   │   ├── import/page.tsx          # 文字录入与 AI 制卡
@@ -98,13 +116,18 @@ study-companion/
 │   │   │   └── index.ts
 │   │   └── db.ts              # Prisma Client 单例
 │   └── modules/               # 业务模块
-│       └── recite/
-│           ├── actions.ts       # Server Actions：重置复习进度、手动推送提醒
-│           ├── reminder.ts      # 推送「今日待复习」提醒（走 push 网关）
-│           ├── scheduler.ts     # 艾宾浩斯调度算法纯函数
-│           ├── scheduler.test.ts
-│           ├── stats.ts         # 累计复习次数与连续天数统计
-│           └── today.ts         # 今日待复习查询（支持 materialId 过滤与新卡上限）
+│       ├── recite/
+│       │   ├── actions.ts       # Server Actions：重置复习进度、手动推送提醒
+│       │   ├── reminder.ts      # 推送「今日待复习」提醒（走 push 网关）
+│       │   ├── scheduler.ts     # 艾宾浩斯调度算法纯函数
+│       │   ├── scheduler.test.ts
+│       │   ├── stats.ts         # 累计复习次数与连续天数统计
+│       │   └── today.ts         # 今日待复习查询（支持 materialId 过滤与新卡上限）
+│       └── companion/
+│           ├── plan.ts          # 计划类型/校验（parsePlan）/日期计算纯函数
+│           ├── stats.ts         # startOfWeek（周一起）、daysUntil、getWeekTasks、getCheckInStreak（连续打卡天数）、toISODate/weekdayLabel
+│           ├── weekly.ts        # parseWeeklyReview：周报 AI 输出校验（riskLevel/summary/adjustments/nextWeekTasks）
+│           └── memory.ts        # 【记忆包机制】assembleContext(goalId)，详见下方模块划分说明
 ├── .env                     # 本地环境变量（API Key、数据库地址，不提交）
 ├── next.config.ts
 ├── package.json
@@ -119,7 +142,27 @@ study-companion/
   - `stats.ts`：累计复习次数与连续复习天数统计。
   - `reminder.ts`：封装「今日待复习」推送（经 `src/lib/push` 网关）。
   - `actions.ts`：Server Actions（重置复习进度、手动触发推送提醒），`/dev/reset-today` 与材料详情页共用。
-- `src/modules/companion`：备考陪伴模块（学习计划、番茄钟、阶段检测）。
+- `src/modules/companion`：备考陪伴模块（目标→AI 阶段计划→每日任务→打卡→AI 周报）。
+  - `plan.ts`：计划类型与纯函数——`parsePlan`（校验/归一化 AI 输出，兼容 assessment 为字符串或字符串数组）、`computePhaseDates`（阶段起止日期，从今天起按周数累推）、`computeTaskDueDate`（第 N 天任务到期日）、`parseDateOnly`（YYYY-MM-DD 解析）。
+  - `stats.ts`：周与打卡统计——`startOfWeek`（周一为一周起点）、`getWeekTasks`（某目标某周任务）、`getCheckInStreak`（连续打卡天数：从今天、若今天未打卡则从昨天往前，每天至少完成 1 个任务）、`toISODate`/`weekdayLabel`（本地自然日工具）。
+  - `weekly.ts`：`parseWeeklyReview`，校验周报 AI 输出（riskLevel 枚举、summary 非空、adjustments 可空、nextWeekTasks day 1-7）。
+
+### 记忆包机制（技术护城河，后续会话重点维护）
+
+`src/modules/companion/memory.ts` 的 `assembleContext(goalId)` 是陪伴模块所有 AI 调用的统一上下文来源，把一个目标的「身份 + 进展」压缩为结构化文本，共 6 个区块：
+
+1. `【目标】`标题 + 类别（exam/project/habit 中文标签）
+2. `【截止】`日期 + 剩余天数
+3. `【每日可投入】`分钟数
+4. `【现状自述】`用户创建目标时填写的原始描述
+5. `【当前阶段】`按日期区间判定（今天不在任何区间时回退到下一个未开始阶段，再回退到最后一个阶段），含阶段重点与结束标志（exitCriteria 存于 Phase.metadata）
+6. `【最近打卡】`最近 3 条 done/skipped 任务（含 resultNote 备注）+ `【本周完成率】`done/total
+
+使用约定（后续会话必须遵守）：
+
+- **所有备考相关 AI 调用一律调用 `assembleContext(goalId)` 拿记忆包，拼进 `chat()` 的 system 消息**（配合 `MEMORY_PACK_HEADER`），禁止各自重新拼目标信息。已接入：今日总结 `daily-feedback`、周报 `weekly-review`。
+- 后续新增 AI 能力（备考答疑、薄弱点提炼、阶段检测、推送文案等）直接复用此函数；记忆包内容演进（错题分布、知识图谱覆盖率等）只改 memory.ts，不动调用方。
+- `goalId` 不存在时抛错；当前阶段判定逻辑与周报页保持一致（本会话实现的 `/companion/plan` 用 `startDate <= today <= endDate` 判定 isCurrent）。
 - `src/modules/classroom`：班级 DDL 模块（作业、考试、通知及其截止时间）。
 - `src/modules/graph`：知识图谱模块（知识点节点、关联、复习路径）。
 - `src/lib/ai`：AI 能力统一网关（已创建，支持 DeepSeek / Kimi，统一封装调用、JSON 解析、用量统计与重试）。
@@ -146,6 +189,7 @@ study-companion/
 
 - **AI 调用一律走 `src/lib/ai` 网关**，禁止在业务代码里直接调用任何大模型 API。
 - **推送一律走 `src/lib/push` 网关**，禁止直接请求 Server 酱或任何推送服务商。
+- **陪伴模块的 AI 调用必须在 system 消息注入记忆包**：`assembleContext(goalId)`（见模块划分中的记忆包机制小节）。
 - 网关内部封装 provider 细节，业务层只与稳定接口交互。
 
 ### 4.3 数据库设计
@@ -207,6 +251,23 @@ study-companion/
 - [x] 材料详情页「重置复习进度」按钮：核心逻辑抽取为 `src/modules/recite/actions.ts` 的 `resetCardsProgress`，`/dev/reset-today` 改为复用同一实现。
 - [x] 定时复习提醒：`src/modules/recite/reminder.ts` + `GET/POST /api/cron/daily-reminder`（需 `CRON_SECRET`，支持 `?secret=` 或 `Authorization: Bearer`）；入口页新增「推送今日复习提醒到微信」手动触发按钮。
 - [x] 修复首页背诵模块卡片今日待复习数量角标不显示的问题（badge 匹配条件误写为 `/recite/review`）。
+- [x] 陪伴模块数据库层：`Goal`、`Phase`、`Task`、`WeeklyReport` 模型及枚举（`GoalCategory` exam/project/habit、`GoalStatus` active/done/archived、`TaskStatus` pending/done/skipped），迁移文件 `20260904154226_add_companion_models`，全部预留 `metadata Json`；Task.phaseId 可空（阶段删除置 Null），Goal/Phase 级联删除。
+- [x] `src/modules/companion/plan.ts`：计划校验与日期纯函数（`parsePlan`/`computePhaseDates`/`computeTaskDueDate`/`parseDateOnly`）。
+- [x] API `POST /api/companion/generate-plan`：入参 `{ title, category, deadline, dailyMinutes, userContext }`，走 AI 网关（taskType `complex`、responseFormat `json`）生成差距评估 + 阶段划分 + 第一周任务，仅返回不入库。
+- [x] API `POST /api/companion/goals`：预览确认后入库，服务端复用 `parsePlan` 校验；事务内创建 Goal（assessment 存 `metadata`）+ Phases（startDate 从今天按 weeks 累推，exitCriteria 存 `metadata`）+ 第一周 Tasks（dueDate=今天+(day-1)，挂到第一阶段），返回 `{ goalId }`。
+- [x] 页面 `/companion` 陪伴模块首页：无目标时显示「开始一个新目标」引导；有目标时显示卡片（标题、类别、倒计时天数、本周进度条、今日任务数与完成情况）。
+- [x] 页面 `/companion/new` 两步向导：第 1 步目标名称/类别/截止日期/每日分钟数，第 2 步现状自述（带四级示例引导语），提交调 generate-plan，计划经 sessionStorage（key `companion:planDraft`）传给预览页。
+- [x] 页面 `/companion/new/preview` 计划预览：差距评估、阶段划分（阶段名可编辑，显示推算的起止日期）、第一周任务（title/detail/minutes 可编辑、可删除），「确认开始」入库后跳转 `/companion`；无草稿时引导回 `/companion/new`。
+- [x] 【记忆包机制】`src/modules/companion/memory.ts`：`assembleContext(goalId)` 组装「目标信息+当前阶段+最近 3 次打卡+本周完成率」结构化文本；设计说明见「模块划分 → 记忆包机制」小节，后续所有备考 AI 调用必须复用。
+- [x] `src/modules/companion/stats.ts`：周一为起点的 `startOfWeek`、`getWeekTasks`、`getCheckInStreak`（连续打卡天数）、`toISODate`/`daysUntil`/`weekdayLabel`；`/companion` 首页与周视图共用。
+- [x] API `PATCH /api/companion/tasks/[taskId]`：任务打卡，body `{ status: done|skipped|pending, resultNote? }`；done 记 `doneAt`，pending 撤销时清空备注与 doneAt。
+- [x] API `POST /api/companion/daily-feedback`：按 goalId 汇总今日任务完成情况，注入记忆包调 AI（taskType `simple`）生成今日总结，仅返回不入库。
+- [x] 页面 `/companion/today` 今日任务：按目标分组显示今日任务（pending 排前），每项可「完成打卡/跳过」（可填结果备注/跳过原因）、已完成项可撤销、圆形复选框快捷打卡；底部「生成今日总结」按钮显示 AI 反馈。
+- [x] API `POST /api/companion/weekly-review?goalId=`：汇总本周任务（完成率、各任务 resultNote、连续打卡天数），注入记忆包调 AI（taskType `complex`）按指定 Prompt 生成周报；`WeeklyReport` 立即入库（riskLevel 与 nextWeekTasks 存 `metadata`），同周重复生成返回 409。
+- [x] API `POST /api/companion/tasks/batch-create`：body `{ goalId, weekStart: 'YYYY-MM-DD', tasks:[{day,title,detail,minutes}] }`，dueDate=weekStart+(day-1)，自动挂接到期日所在阶段；该周已有任务时返回 409 防重复入库。
+- [x] 页面 `/companion/plan` 周视图：阶段总览（当前阶段高亮）、本周任务日历（周一~周日分组、今天高亮、已完成打勾/跳过灰化、备注内联显示）、周报区（进度风险灯 绿/黄/红 + 周报卡片 + 下周计划确认入库按钮，已入库显示 ✓）；多目标时顶部切换（`?goalId=`）。
+- [x] 首页 `/` 陪伴模块卡片显示角标「剩 N 天 · 今日 x/y」（取最近截止的 active 目标 + 所有 active 目标今日任务完成数）；`ModuleCard` 新增 `badgeText` 自定义角标支持。
+- [x] `/companion` 首页新增「今日任务」「周计划与周报」两个快捷入口卡片（今日任务入口带完成数摘要）。
 
 ## 6. 待办与已知坑
 
@@ -225,6 +286,15 @@ study-companion/
 - 移动端样式：已将主要页面 `min-h-screen` 统一为 `min-h-svh`；主要操作按钮高度统一为 ≥44px，避免小屏误触。
 - 复习流程当前为单用户本地 Demo，未接入真实用户体系；`ReviewLog` 的 `userAnswer` 仅作记录，不做 AI 自动批改。
 - 复习页 UI 只暴露两档自评（forgot/good），但 API 与数据库仍保留 hard/easy，恢复四档只需改回前端按钮。
+- 陪伴模块执行闭环已通（建目标→今日打卡→AI 周报→下周计划入库），剩余待办：
+  - 周报周日自动触发：本期仅手动按钮，后续可挂 `/api/cron/`（复用 CRON_SECRET 模式）在周日晚自动跑 `weekly-review` 并推送。
+  - 周报不支持重新生成（同周 409）；如需重生成需先删旧 WeeklyReport，且下周任务已入库后重新生成会因 batch-create 的 409 无法再次确认，需设计清理流程。
+  - 目标卡片仍不可点击；目标详情页（/companion/goals/[id]）如需单独的历史周报列表可再建。
+  - 首页陪伴角标只显示最早截止目标的倒计时 + 全部 active 目标今日完成数，多目标时未按目标拆分。
+  - 打卡成功后依赖 `router.refresh()` 重新取数，无乐观更新；任务量大时可优化。
+- AI 生成计划的已知行为：模型可能把「差距评估 3 条以内」输出为字符串数组，`parsePlan` 已兼容两种形态；Prompt 中要求同一天任务 minutes 总和不超过每日可投入时间。周报 Prompt 要求 nextWeekTasks day 1-7 对应下周一到下周日，day 与 dueDate 的换算统一在 `tasks/batch-create` 服务端做。
+- `.env` 中 `KIMI_API_KEY` 未配置时，complex 任务自动回退 DeepSeek（控制台有 warning）；AI 网关 60 秒超时对长规划可能偏紧，若频繁超时可考虑调大。
+- dev server 运行期间执行 `npx prisma generate` 可能因 query engine dll 被占用报 EPERM，且可能卡死 dev server（本次出现，重启后恢复）；建议 generate 前先停 dev server。
 
 ## 7. 协作规则
 

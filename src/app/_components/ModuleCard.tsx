@@ -7,6 +7,8 @@ interface ModuleCardProps {
   emoji: string;
   colorClass: string;
   badgeCount?: number;
+  /** 自定义角标文案（如「剩 98 天 · 今日 2/5」）；不传时按 badgeCount 显示「N 待复习」 */
+  badgeText?: string;
 }
 
 export function ModuleCard({
@@ -16,7 +18,9 @@ export function ModuleCard({
   emoji,
   colorClass,
   badgeCount,
+  badgeText,
 }: ModuleCardProps) {
+  const showBadge = typeof badgeText === "string" || typeof badgeCount === "number";
   return (
     <Link
       href={href}
@@ -28,9 +32,9 @@ export function ModuleCard({
         >
           {emoji}
         </div>
-        {typeof badgeCount === "number" && badgeCount > 0 && (
+        {showBadge && (
           <span className="rounded-full bg-rose-500 px-2.5 py-0.5 text-xs font-semibold text-white">
-            {badgeCount} 待复习
+            {badgeText ?? `${badgeCount} 待复习`}
           </span>
         )}
       </div>
