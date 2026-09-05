@@ -433,6 +433,14 @@ study-companion/
   - Prisma SQLite 不支持 String[]，GraphNode.aliases 用 Json 数组存储（读写用 `readAliases`/set 数组），迁 PostgreSQL 时建议改为 String[]。
   - 重启 dev server 的时机：`prisma migrate`/`generate` 之后必须重启，否则 db.ts 的全局 Prisma 单例仍是旧模型（报 "Cannot read properties of undefined (reading 'findMany')"）。
   - react-hooks 编译器 lint（purity）禁止组件体直接调 Date.now()/Math.random()——把含非纯调用的数据组装抽到组件外的普通函数。
+- **图谱压测结论（2026-09-06，16 篇=12 深度学习+4 跨领域，脚本 `scripts/graph-stress-*.mts` 可复跑）**：
+  - 管线 16/16 成功；101 实体、83 关系；91 节点、91 边。
+  - **合并机制正确率 100%**（7 次对齐决策全部正确：CNN→卷积神经网络、LSTM→长短期记忆网络等），另有 1 例错合「参数⇒权重」（1/24≈4%），可在对齐 Prompt 加"参数与权重应区分"。
+  - 抽取覆盖率是主要损耗：2 次"应复用未复用"实为 AI 抽取时漏掉了实体（对齐没机会跑），非对齐失败。
+  - **已确认退化点①：领域标签碎片化**——12 个 domain 中 6 个是同领域变体（机器学习/深度学习/人工智能/计算机/计算机视觉 + 斜杠复合标签）。调优方向：domain 也走对齐（归一表或 AI 归一），或 extract Prompt 限定领域枚举。
+  - **已确认退化点②：关系粒度碎**——36 种动词，含"与/相比/示例"等非关系词和"使用/使用了"近义。调优方向：extract Prompt 提供标准动词表（是/包含/导致/解决/应用于/属于/促进/抑制/需要），并要求短动词。
+  - 孤立节点 16%（健康线内）；冲突 0 误报；跨领域 4 篇 0 错连、独立成块（健身营养/历史/咖啡/英语各自聚簇）。
+  - mention 分布健康：卷积神经网络×4、学习率×3、梯度消失×3 等核心概念随喂入增长。
 - `.env` 中 `KIMI_API_KEY` 未配置时，complex 任务自动回退 DeepSeek（控制台有 warning）；AI 网关 60 秒超时对长规划可能偏紧，若频繁超时可考虑调大。
 - `.env` 已配置 `CRON_SECRET=dev-local-secret-2026`（本地联调值）。本机 crontab 配置（Windows 用任务计划程序或 WSL crontab，URL 前缀按部署地址替换）：
   ```
