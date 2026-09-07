@@ -1,0 +1,97 @@
+# 已完成清单完整历史
+
+> 2026-09-07 起 AGENTS.md 只保留「当前能力概览」，详细完成记录统一追加到本文件（替代原「只增不减」写在 AGENTS.md 里的做法）。
+
+## 2026-09-07（图谱边归一 + 计划对话式调整）
+
+- [x] 图谱边归一（防边碎片化）：extract Prompt 增加标准动词表（是/包含/属于/导致/源于/解决/应用于/促进/抑制/需要/组成/使用/提升/降低）并要求短动词；`parseExtraction` 统一走 `normalizeRelation`（RELATION_SYNONYMS 同义映射 + INVERSE_RELATIONS 互逆方向归一〔属于→包含、源于→导致，端点对调〕+ 噪音词过滤〔与/相比/示例/相关…〕+ 批内三元组去重），预览与入库、清理脚本共用同一出口；存量清理脚本 `scripts/graph-normalize-edges.mts`（删噪音边 3 条、改写互逆/近义方向 15 条；冲突检测的 OPPOSITE_RELATIONS 基于归一后动词，误报减少）。
+- [x] 计划对话式调整（预览期）：API `POST /api/companion/revise-plan`（草稿+指令→AI 返回完整修订计划，复用 parsePlan 校验出入参，不入库）；预览页底部「对话式调整」指令框，支持多轮（历史存 sessionStorage 随草稿）与「撤销上一次调整」，手动编辑会清空撤销栈；产品底线不变（调整后仍是预览，确认才入库）。
+- [x] 计划执行中手动调整：`PATCH /api/companion/tasks/[taskId]` 扩展 title/detail/estMinutes/dueDate（改期自动按到期日重挂阶段，打卡语义不变）；同路由新增 `DELETE` 删任务；`POST /api/companion/tasks` 手动新增单条任务；周计划页任务标题可点进编辑页 `/companion/plan/tasks/[taskId]`（改内容/改期/删除，复用打卡 API），底部「+ 手动添加任务」内联表单。
+- [x] 周报下周计划 AI 调整：API `POST /api/companion/revise-week-tasks`（任务数组+指令→修订数组，不入库）；周计划页下周任务预览区加「AI 调整」指令框，本地 override 后「确认入库」用修订版任务。
+- [x] AI 用量按模块统计：`ApiLog` 增加 `module` 字段（迁移 `20260906170000_add_apilog_module`），`chat()` 新增 `module` 选项写入日志；8 个调用点全部标注（制卡/备考计划/今日总结/备考周报/图谱抽取/实体对齐/任务提取/调试）。
+- [x] 页面 `/dev/ai-usage`：总览卡片（调用数/token/输入输出/估算费用）、近 30 天每日消耗柱状图（echarts bar 按需引入）、按功能模块、按模型（含均耗时与费用估算）；价格表为 `src/lib/ai/pricing.ts`（元/百万 token，仅本地估算，厂商调价后需手工更新）。
+- [x] 首页 `/` 底部新增「AI 用量与费用」入口链接。
+- [x] 陪伴模块目标管理：目标卡片支持归档（status=archived，数据保留、列表隐藏）与删除（级联删阶段/任务/周报，二次确认）；`src/modules/companion/actions.ts`（deleteGoalAction/archiveGoalAction）+ `src/app/companion/GoalActions.tsx`。
+
+## 2026-09-06（图谱模块 + 压测）
+
+- [x] 图谱模块数据层：`Source`（sourceType 枚举 text/url/screenshot/pdf，本期仅 text）、`GraphNode`（aliases 存 Json 数组——SQLite 无标量数组，迁 PG 可换 String[]；name 唯一）、`GraphEdge`（from+to+relation 唯一，weight 去重累加）、`NodeSource`（nodeId+sourceId 唯一溯源）、`MergeReview`（type align/conflict，status pending/approved/rejected）。迁移 `20260906110000_add_graph_models`。
+- [x] API `POST /api/graph/extract`：AI（simple+json）按指定 Prompt 抽取 domain/entities/relations，`parseExtraction` 校验并过滤端点不在实体表的关系。
+- [x] API `POST /api/graph/ingest`：事务内两段式实体对齐 + 关系去重 + NodeSource 溯源 + 冲突写 MergeReview，返回新增/复用节点数、新增边数、冲突数、对齐明细。
+- [x] 页面 `/graph/import` 喂入页：标题+大文本域 → 提炼 → 预览（领域标签、实体/关系可删、删除实体后受影响关系自动灰化提示）→ 确认入库 → 合并结果摘要（新增X/复用Y/新增Z + 冲突跳转审阅）。
+- [x] API `GET /api/graph/data?domain=`：节点 symbolSize 按 mentionCount 映射 20-60，边带 relation 与 weight；>200 节点只回 mentionCount≥2（临时策略，有注释）；统计数字与领域列表。
+- [x] API `GET /api/graph/node/[id]`：节点详情（别名/摘要/提及数/关联边含邻居名与方向/来源溯源列表）。
+- [x] 页面 `/graph` 力导向图：ECharts 按需引入（echarts/core + GraphChart + CanvasRenderer），节点拖拽/缩放/点击抽屉、边 label 默认隐藏 hover 显示、领域图例自动配色、领域筛选下拉、搜索定位高亮、统计数字、空态「去喂入第一篇知识」引导。
+- [x] 节点详情底部抽屉：名称/别名/解释/提及次数/关联知识点（可点击跳转高亮）/来源列表（展开看原文片段）。
+- [x] 页面 `/graph/sources` 列表与 `/graph/sources/[id]` 详情：提炼快照（Source.metadata）、关联节点、原文与溯源片段；删除来源（mentionCount-1，归零标 pendingCleanup，节点边保守保留）。
+- [x] 页面 `/graph/review` 审阅队列：pending 冲突（新旧关系对比+来源+依据），三选一裁决（保留旧/采用新/共存+备注）。
+- [x] 页面 `/graph/growth` 成长视图：三张大数字卡片、近 30 天喂入/新增柱状图、领域分布饼图（echarts bar+pie 按需引入）。
+- [x] 图谱模块底部 tab 导航 `GraphTabs`（图谱/喂入/来源/成长；移动端固定底部、桌面顶部横排）。
+- [x] 首页 `/` 图谱卡片角标「N 知识点 · 本周 +M」（空图谱不显示）。
+- [x] 图谱全流程走查通过：两篇同领域文章相同概念正确合并（mentionCount=2、别名并入、重复边 weight+1）、溯源片段正确、冲突进审阅队列并裁决成功。
+- [x] 压测脚本 `scripts/graph-stress-*.mts`：16 篇混域喂入验证合并策略。
+
+**图谱压测结论（2026-09-06，16 篇=12 深度学习+4 跨领域）**：
+
+- 管线 16/16 成功；101 实体、83 关系；91 节点、91 边。
+- **合并机制正确率 100%**（7 次对齐决策全部正确：CNN→卷积神经网络、LSTM→长短期记忆网络等），另有 1 例错合「参数⇒权重」（1/24≈4%），可在对齐 Prompt 加"参数与权重应区分"。
+- 抽取覆盖率是主要损耗：2 次"应复用未复用"实为 AI 抽取时漏掉了实体（对齐没机会跑），非对齐失败。
+- **已确认退化点①：领域标签碎片化**——12 个 domain 中 6 个是同领域变体（机器学习/深度学习/人工智能/计算机/计算机视觉 + 斜杠复合标签）。调优方向：domain 也走对齐（归一表或 AI 归一），或 extract Prompt 限定领域枚举。
+- **已确认退化点②：关系粒度碎**——36 种动词，含"与/相比/示例"等非关系词和"使用/使用了"近义。已实施（2026-09-07）：extract Prompt 标准动词表 + normalizeRelation（同义映射/互逆归一/噪音过滤/批内去重）+ 存量清理脚本；存量 84 边清理后 81 条（删噪音 3、改写方向 15，真语义多边保留）。
+- 孤立节点 16%（健康线内）；冲突 0 误报；跨领域 4 篇 0 错连、独立成块（健身营养/历史/咖啡/英语各自聚簇）。
+- mention 分布健康：卷积神经网络×4、学习率×3、梯度消失×3 等核心概念随喂入增长。
+
+## 2026-09-05（班级模块）
+
+- [x] 班级模块数据层：`Classroom`（inviteCode 唯一索引）、`ClassroomMember`（classroomId+userId 联合唯一）、`ClassTask`（含枚举 `ClassTaskSourceType` text/screenshot、`ClassTaskType` homework/exam/activity/notice、`updatedBy` 最后修改人）、`TaskCompletion`（taskId+userId 联合唯一，任务共享但完成状态个人化）；`User` 增加 `studentNo`/`pushKey`/`sessionToken`（唯一）。迁移 `20260905113000_add_classroom_models`、`20260905120000_add_class_task_updated_by`。
+- [x] 轻量账号体系：`src/lib/auth.ts`（getCurrentUser/cookie 签发，MVP 注释说明未来可换 NextAuth）；`/classroom/identity` 创建身份页（昵称必填+学号选填，支持 `?code=` 邀请自动入班）。
+- [x] 页面 `/classroom`：我的班级列表 + 创建班级（Server Action，邀请码 8 位去易混淆字符生成）+ 加入班级（邀请码）+ 无效邀请码错误提示。
+- [x] 页面 `/classroom/[id]` 班级空间：邀请码+邀请链接一键复制（含 execCommand 降级）、成员列表（班长/我角标）、任务流。
+- [x] 数据隔离：`membership.ts` + 页面 `forbidden()` 真实 403（`next.config.ts` 开启 `experimental.authInterrupts`，新增 `app/forbidden.tsx`）+ API 403 JSON；未登录统一重定向创建身份页。
+- [x] API `POST /api/classroom/[id]/tasks/extract`：AI（simple+json）按指定 Prompt 提取通知中的任务（相对时间换算、低置信度标注），只解析不入库；Prompt 额外注入本地日期+星期锚点避免 UTC 日期偏差。
+- [x] API `POST /api/classroom/[id]/tasks`（确认发布批量入库）、`PATCH .../tasks/[taskId]`（任何成员可编辑，记录 updatedBy）、`POST .../tasks/[taskId]/toggle`（切换当前用户自己的 TaskCompletion）。
+- [x] 班级空间任务流：按 deadline 升序、逾期未完成置顶标「已逾期」、三色预警（<24h 红/<3天黄/其余绿，含「还剩X天/小时」）、平台/课程/类型标签、录入人昵称、我的完成复选框；全部/未完成/已完成筛选。
+- [x] 录入区：大文本域+智能提取 → 提取结果卡片预览（全部字段可编辑、置信度<0.6 标黄「时间待确认」）→ 确认发布；聚焦时尝试读取剪贴板（需授权，失败静默），检测到内容弹「是否提取」；移动端录入按钮固定底部+底部弹层。
+- [x] 任务编辑页 `/classroom/[id]/tasks/[taskId]`：全部字段可改（老师改期场景），显示录入人+最后修改人。
+- [x] 推送网关升级：`pushToUser({ sendKey, title, content })` 支持指定 SendKey，不传回落 `SERVER_CHAN_SEND_KEY`（背诵模块不受影响）。
+- [x] 页面 `/classroom/settings` 个人设置：绑定 Server酱 SendKey（含获取教程+SCT 格式校验）+发送测试消息+展示昵称/学号/已加入班级；`signOutAction` 清除身份。
+- [x] API `GET /api/cron/classroom-push?secret=&mode=morning|evening`：与背诵 daily-reminder 共用 CRON_SECRET；morning 推今日到期、evening 推 24h 内到期（标题「⏰ 明天截止：N 项任务」），按成员各自 pushKey 推各自未完成清单，无待办不推送。
+- [x] 邀请链接 `/classroom/join?code=xxx`：已登录直接入班，未登录先创建身份再自动入班（identity 页透传 code）。
+- [x] 首页 `/` 班级卡片角标「3 天内 N 项到期」：跨所有我加入的班级统计未来 3 天到期且我未完成的任务。
+
+## 2026-09-04（陪伴模块）
+
+- [x] 陪伴模块数据库层：`Goal`、`Phase`、`Task`、`WeeklyReport` 模型及枚举（`GoalCategory` exam/project/habit、`GoalStatus` active/done/archived、`TaskStatus` pending/done/skipped），迁移文件 `20260904154226_add_companion_models`，全部预留 `metadata Json`；Task.phaseId 可空（阶段删除置 Null），Goal/Phase 级联删除。
+- [x] `src/modules/companion/plan.ts`：计划校验与日期纯函数（`parsePlan`/`computePhaseDates`/`computeTaskDueDate`/`parseDateOnly`）。
+- [x] API `POST /api/companion/generate-plan`：入参 `{ title, category, deadline, dailyMinutes, userContext }`，走 AI 网关（taskType `complex`、responseFormat `json`）生成差距评估 + 阶段划分 + 第一周任务，仅返回不入库。
+- [x] API `POST /api/companion/goals`：预览确认后入库，服务端复用 `parsePlan` 校验；事务内创建 Goal（assessment 存 `metadata`）+ Phases（startDate 从今天按 weeks 累推，exitCriteria 存 `metadata`）+ 第一周 Tasks（dueDate=今天+(day-1)，挂到第一阶段），返回 `{ goalId }`。
+- [x] 页面 `/companion` 陪伴模块首页：无目标时显示「开始一个新目标」引导；有目标时显示卡片（标题、类别、倒计时天数、本周进度条、今日任务数与完成情况）。
+- [x] 页面 `/companion/new` 两步向导：第 1 步目标名称/类别/截止日期/每日分钟数，第 2 步现状自述（带四级示例引导语），提交调 generate-plan，计划经 sessionStorage（key `companion:planDraft`）传给预览页。
+- [x] 页面 `/companion/new/preview` 计划预览：差距评估、阶段划分（阶段名可编辑，显示推算的起止日期）、第一周任务（title/detail/minutes 可编辑、可删除），「确认开始」入库后跳转 `/companion`；无草稿时引导回 `/companion/new`。
+- [x] 【记忆包机制】`src/modules/companion/memory.ts`：`assembleContext(goalId)` 组装「目标信息+当前阶段+最近 3 次打卡+本周完成率」结构化文本。
+- [x] `src/modules/companion/stats.ts`：周一为起点的 `startOfWeek`、`getWeekTasks`、`getCheckInStreak`（连续打卡天数）、`toISODate`/`daysUntil`/`weekdayLabel`；`/companion` 首页与周视图共用。
+- [x] API `PATCH /api/companion/tasks/[taskId]`：任务打卡，body `{ status: done|skipped|pending, resultNote? }`；done 记 `doneAt`，pending 撤销时清空备注与 doneAt。
+- [x] API `POST /api/companion/daily-feedback`：按 goalId 汇总今日任务完成情况，注入记忆包调 AI（taskType `simple`）生成今日总结，仅返回不入库。
+- [x] 页面 `/companion/today` 今日任务：按目标分组显示今日任务（pending 排前），每项可「完成打卡/跳过」（可填结果备注/跳过原因）、已完成项可撤销、圆形复选框快捷打卡；底部「生成今日总结」按钮显示 AI 反馈。
+- [x] API `POST /api/companion/weekly-review?goalId=`：汇总本周任务（完成率、各任务 resultNote、连续打卡天数），注入记忆包调 AI（taskType `complex`）按指定 Prompt 生成周报；`WeeklyReport` 立即入库（riskLevel 与 nextWeekTasks 存 `metadata`），同周重复生成返回 409。
+- [x] API `POST /api/companion/tasks/batch-create`：body `{ goalId, weekStart: 'YYYY-MM-DD', tasks:[{day,title,detail,minutes}] }`，dueDate=weekStart+(day-1)，自动挂接到期日所在阶段；该周已有任务时返回 409 防重复入库。
+- [x] 页面 `/companion/plan` 周视图：阶段总览（当前阶段高亮）、本周任务日历（周一~周日分组、今天高亮、已完成打勾/跳过灰化、备注内联显示）、周报区（进度风险灯 绿/黄/红 + 周报卡片 + 下周计划确认入库按钮，已入库显示 ✓）；多目标时顶部切换（`?goalId=`）。
+- [x] 首页 `/` 陪伴模块卡片显示角标「剩 N 天 · 今日 x/y」（取最近截止的 active 目标 + 所有 active 目标今日任务完成数）；`ModuleCard` 新增 `badgeText` 自定义角标支持。
+- [x] `/companion` 首页新增「今日任务」「周计划与周报」两个快捷入口卡片（今日任务入口带完成数摘要）。
+
+## 2026-09-01~03（背诵模块 + 基础设施）
+
+- [x] 项目初始化（Next.js App Router + TypeScript + Tailwind CSS）、目录结构搭建、Prisma 初始化、四模块入口占位页面、`/api/health`。
+- [x] 统一 AI 网关 `src/lib/ai/`（DeepSeek 默认、Kimi 复杂任务、OpenAI 兼容、60 秒超时、失败重试 1 次）；`ApiLog` 模型记录 token 用量与耗时；`GET /api/admin/ai-stats`；开发调试页面 `/dev/ai-test`。
+- [x] 统一推送网关 `src/lib/push/`（Server 酱 Turbo、`PushChannel` 抽象、`pushToUser` 入口、失败不阻塞业务）；开发调试页面 `/dev/push-test`。
+- [x] 背诵模块数据库层：`Material`、`Card`、`ReviewLog` 模型及枚举，迁移 `20260901102816_add_recite_models` + 常用查询索引；种子脚本 `prisma/seed.ts`（`npx prisma db seed`）。
+- [x] 制卡链路：`/recite/import` 文字录入 → AI 制卡 → 预览确认 → 批量入库；`POST /api/recite/generate-cards`（不入库）、`POST /api/recite/cards/batch-create`（仅保存勾选）、`DELETE /api/recite/cards/[cardId]`；`/recite/materials` 列表与 `/recite/materials/[id]` 详情/删除。
+- [x] 复习调度算法 `src/modules/recite/scheduler.ts`：艾宾浩斯阶梯 `[1,2,4,7,15,30]`，四档自评（forgot/hard/good/easy）状态流转，mastery 进阶规则，纯函数；vitest 单元测试 16 个用例（`npm test`）。
+- [x] 迁移 `20260902015423_add_card_good_streak`：`Card` 增加 `goodStreak` 字段支持连续 good/easy 计数。
+- [x] API `GET /api/recite/today`（今日待复习 + 每日上限 10 张新卡，`materialId`/`dailyNewCardLimit` 参数）；`POST /api/recite/review`（调度更新 + `ReviewLog`）；`/recite/review` 卡片流页面（进度条/挖空/判断/默写/自评/总结页）。
+- [x] 首页 `/` 背诵卡片今日待复习角标；`/recite` 入口导航页；移动端样式统一（≥44px 触摸目标、`min-h-svh`、spinner）。
+- [x] 复习页「查看背诵原文」折叠区、挖空可输入、两档自评（forgot/good，四档数据保留可恢复）、自评按钮标注后果、每日新卡上限 5/10/20 可调、新旧卡混合排序（`interleaveDueAndNew`）。
+- [x] `src/modules/recite/stats.ts` + `GET /api/recite/stats`（累计复习次数与连续天数，按本地自然日去重）；入口页与完成页展示。
+- [x] 材料详情页：掌握度分布（new/learning/familiar/mastered）、每张卡遗忘次数与下次复习日期、「重置复习进度」（核心逻辑 `src/modules/recite/actions.ts` 的 `resetCardsProgress`，`/dev/reset-today` 复用）。
+- [x] 定时复习提醒：`src/modules/recite/reminder.ts` + `GET/POST /api/cron/daily-reminder`（需 `CRON_SECRET`）；入口页手动推送按钮。
+- [x] 按材料复习链路（`materialId` 透传）；统一返回导航 `BackLink`；修复首页背诵角标匹配条件；修复 `.env` 中 `DATABASE_URL` 为相对路径（`file:./dev.db`）。
