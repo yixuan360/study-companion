@@ -23,6 +23,7 @@ export interface PlanData {
   weekDays: {
     label: string;
     dateLabel: string;
+    dateISO: string;
     isToday: boolean;
     tasks: {
       id: string;
@@ -66,6 +67,8 @@ const riskStyles: Record<
 
 const dayNames = ["下周一", "下周二", "下周三", "下周四", "下周五", "下周六", "下周日"];
 
+type WeekTask = { day: number; title: string; detail: string; minutes: number };
+
 function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
@@ -96,6 +99,19 @@ export default function PlanClient({ data }: { data: PlanData }) {
   const [generating, setGenerating] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
+  const [nextWeekOverride, setNextWeekOverride] = useState<WeekTask[] | null>(null);
+  const [weekInstruction, setWeekInstruction] = useState("");
+  const [revisingWeek, setRevisingWeek] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTitle, setAddTitle] = useState("");
+  const [addDetail, setAddDetail] = useState("");
+  const [addMinutes, setAddMinutes] = useState("30");
+  const [addDate, setAddDate] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const nextWeekTasks: WeekTask[] =
+    nextWeekOverride ?? data.report?.nextWeekTasks ?? [];
+  const todayISO = data.weekDays.find((d) => d.isToday)?.dateISO ?? "";
 
   async function generateReport() {
     setError("");
@@ -117,7 +133,7 @@ export default function PlanClient({ data }: { data: PlanData }) {
   }
 
   async function confirmNextWeek() {
-    if (!data.report || data.report.nextWeekTasks.length === 0) return;
+    if (nextWeekTasks.length === 0) return;
     setError("");
     setConfirming(true);
     try {
@@ -127,7 +143,7 @@ export default function PlanClient({ data }: { data: PlanData }) {
         body: JSON.stringify({
           goalId: data.currentGoalId,
           weekStart: data.nextWeekStartISO,
-          tasks: data.report.nextWeekTasks,
+          tasks: nextWeekTasks,
         }),
       });
       const result = (await res.json()) as { code: number; msg: string };
@@ -138,6 +154,68 @@ export default function PlanClient({ data }: { data: PlanData }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setConfirming(false);
+    }
+  }
+
+  async function reviseNextWeek() {
+    if (nextWeekTasks.length === 0 || !weekInstruction.trim()) return;
+    setError("");
+    setRevisingWeek(true);
+    try {
+      const res = await fetch("/api/companion/revise-week-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tasks: nextWeekTasks,
+          instruction: weekInstruction.trim(),
+          dailyMinutes: data.dailyMinutes,
+        }),
+      });
+      const result = (await res.json()) as {
+        code: number;
+        data: { tasks: WeekTask[] } | null;
+        msg: string;
+      };
+      if (result.code !== 0 || !result.data) {
+        throw new Error(result.msg || "调整失败");
+      }
+      setNextWeekOverride(result.data.tasks);
+      setWeekInstruction("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRevisingWeek(false);
+    }
+  }
+
+  async function addTask() {
+    setError("");
+    setAdding(true);
+    try {
+      const res = await fetch("/api/companion/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goalId: data.currentGoalId,
+          title: addTitle.trim(),
+          detail: addDetail.trim(),
+          estMinutes: Number(addMinutes),
+          dueDate: addDate,
+        }),
+      });
+      const result = (await res.json()) as { code: number; msg: string };
+      if (result.code !== 0) {
+        throw new Error(result.msg || "添加失败");
+      }
+      setAddOpen(false);
+      setAddTitle("");
+      setAddDetail("");
+      setAddMinutes("30");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -288,7 +366,12 @@ export default function PlanClient({ data }: { data: PlanData }) {
                                   : "text-zinc-800 dark:text-zinc-200"
                             }
                           >
-                            {task.title}
+                            <Link
+                              href={`/companion/plan/tasks/${task.id}`}
+                              className="underline-offset-2 hover:underline"
+                            >
+                              {task.title}
+                            </Link>
                             {task.resultNote && (
                               <span className="ml-1 text-xs text-zinc-400">
                                 （{task.resultNote}）
@@ -305,6 +388,72 @@ export default function PlanClient({ data }: { data: PlanData }) {
                 )}
               </div>
             ))}
+
+            {addOpen ? (
+              <div className="rounded-2xl border border-indigo-200 bg-white p-4 dark:border-indigo-900/50 dark:bg-zinc-900">
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={addTitle}
+                    onChange={(e) => setAddTitle(e.target.value)}
+                    placeholder="任务标题"
+                    className="w-full rounded-lg border border-zinc-200 bg-white p-2.5 text-base text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                  />
+                  <textarea
+                    value={addDetail}
+                    onChange={(e) => setAddDetail(e.target.value)}
+                    rows={2}
+                    placeholder="怎么做、做到什么程度"
+                    className="w-full rounded-lg border border-zinc-200 bg-white p-2.5 text-base text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      min={5}
+                      max={1440}
+                      value={addMinutes}
+                      onChange={(e) => setAddMinutes(e.target.value)}
+                      aria-label="预计分钟"
+                      className="w-full rounded-lg border border-zinc-200 bg-white p-2.5 text-base text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                    />
+                    <input
+                      type="date"
+                      value={addDate}
+                      onChange={(e) => setAddDate(e.target.value)}
+                      aria-label="到期日"
+                      className="w-full rounded-lg border border-zinc-200 bg-white p-2.5 text-base text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={addTask}
+                      disabled={adding || !addTitle.trim() || !addDetail.trim() || !addDate}
+                      className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {adding && <Spinner />}
+                      {adding ? "添加中..." : "保存任务"}
+                    </button>
+                    <button
+                      onClick={() => setAddOpen(false)}
+                      disabled={adding}
+                      className="min-h-[44px] rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setAddDate(todayISO);
+                  setAddOpen(true);
+                }}
+                className="flex min-h-[44px] w-full items-center justify-center rounded-xl border border-dashed border-zinc-300 text-sm font-medium text-zinc-500 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-indigo-700 dark:hover:text-indigo-400"
+              >
+                + 手动添加任务
+              </button>
+            )}
           </div>
         )}
       </section>
@@ -346,13 +495,13 @@ export default function PlanClient({ data }: { data: PlanData }) {
               </div>
             )}
 
-            {data.report.nextWeekTasks.length > 0 && (
+            {nextWeekTasks.length > 0 && (
               <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                 <p className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                   下周计划（AI 建议）
                 </p>
                 <ul className="mb-4 space-y-2">
-                  {data.report.nextWeekTasks.map((task, i) => (
+                  {nextWeekTasks.map((task, i) => (
                     <li key={i} className="flex items-start justify-between gap-2 text-sm">
                       <span className="min-w-0">
                         <span className="mr-1.5 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
@@ -377,14 +526,36 @@ export default function PlanClient({ data }: { data: PlanData }) {
                     ✓ 下周任务已入库
                   </p>
                 ) : (
-                  <button
-                    onClick={confirmNextWeek}
-                    disabled={confirming}
-                    className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-base font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {confirming && <Spinner />}
-                    {confirming ? "入库中..." : "确认下周计划，生成任务"}
-                  </button>
+                  <>
+                    <div className="mb-3 flex gap-2">
+                      <input
+                        type="text"
+                        value={weekInstruction}
+                        onChange={(e) => setWeekInstruction(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !revisingWeek) reviseNextWeek();
+                        }}
+                        placeholder="对下周计划提调整指令，如「周三减少一项」"
+                        className="w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                      <button
+                        onClick={reviseNextWeek}
+                        disabled={revisingWeek || !weekInstruction.trim()}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {revisingWeek && <Spinner className="h-3 w-3" />}
+                        {revisingWeek ? "调整中…" : "AI 调整"}
+                      </button>
+                    </div>
+                    <button
+                      onClick={confirmNextWeek}
+                      disabled={confirming}
+                      className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-base font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {confirming && <Spinner />}
+                      {confirming ? "入库中..." : "确认下周计划，生成任务"}
+                    </button>
+                  </>
                 )}
               </div>
             )}

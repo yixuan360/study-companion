@@ -12,6 +12,17 @@ import {
 
 const PLAN_DRAFT_KEY = "companion:planDraft";
 
+interface PlanData {
+  assessment: string;
+  phases: { name: string; weeks: number; focus: string; exitCriteria: string }[];
+  week1Tasks: { day: number; title: string; detail: string; minutes: number }[];
+}
+
+interface PlanRevision {
+  instruction: string;
+  plan: PlanData;
+}
+
 interface PlanDraft {
   form: {
     title: string;
@@ -20,11 +31,9 @@ interface PlanDraft {
     dailyMinutes: number;
     userContext: string;
   };
-  plan: {
-    assessment: string;
-    phases: { name: string; weeks: number; focus: string; exitCriteria: string }[];
-    week1Tasks: { day: number; title: string; detail: string; minutes: number }[];
-  };
+  plan: PlanData;
+  /** AI 调整历史（供撤销），手动编辑后清空 */
+  past?: PlanRevision[];
 }
 
 const categoryLabels: Record<string, string> = {
@@ -70,14 +79,17 @@ export default function PlanPreviewPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [revising, setRevising] = useState(false);
 
   useEffect(() => {
     // sessionStorage 只在客户端存在，必须在挂载后读取，否则 SSR 水合不一致
     const raw = sessionStorage.getItem(PLAN_DRAFT_KEY);
     if (raw) {
       try {
+        const parsed = JSON.parse(raw) as PlanDraft;
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setDraft(JSON.parse(raw) as PlanDraft);
+        setDraft({ ...parsed, past: Array.isArray(parsed.past) ? parsed.past : [] });
       } catch {
         setDraft(null);
       }
@@ -85,10 +97,16 @@ export default function PlanPreviewPage() {
     setLoading(false);
   }, []);
 
+  function saveDraft(next: PlanDraft) {
+    setDraft(next);
+    sessionStorage.setItem(PLAN_DRAFT_KEY, JSON.stringify(next));
+  }
+
   function updatePhaseName(index: number, name: string) {
     if (!draft) return;
-    setDraft({
+    saveDraft({
       ...draft,
+      past: [],
       plan: {
         ...draft.plan,
         phases: draft.plan.phases.map((p, i) =>
@@ -100,8 +118,9 @@ export default function PlanPreviewPage() {
 
   function updateTask(index: number, field: "title" | "detail" | "minutes", value: string) {
     if (!draft) return;
-    setDraft({
+    saveDraft({
       ...draft,
+      past: [],
       plan: {
         ...draft.plan,
         week1Tasks: draft.plan.week1Tasks.map((t, i) =>
@@ -117,13 +136,56 @@ export default function PlanPreviewPage() {
 
   function deleteTask(index: number) {
     if (!draft) return;
-    setDraft({
+    saveDraft({
       ...draft,
+      past: [],
       plan: {
         ...draft.plan,
         week1Tasks: draft.plan.week1Tasks.filter((_, i) => i !== index),
       },
     });
+  }
+
+  async function handleRevise() {
+    if (!draft || !instruction.trim()) return;
+    setRevising(true);
+    setError("");
+    try {
+      const res = await fetch("/api/companion/revise-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: draft.plan,
+          instruction: instruction.trim(),
+          context: draft.form,
+        }),
+      });
+      const result = (await res.json()) as {
+        code: number;
+        data: { plan: PlanData } | null;
+        msg: string;
+      };
+      if (result.code !== 0 || !result.data) {
+        throw new Error(result.msg || "调整失败");
+      }
+      saveDraft({
+        ...draft,
+        past: [...(draft.past ?? []), { instruction: instruction.trim(), plan: draft.plan }],
+        plan: result.data.plan,
+      });
+      setInstruction("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRevising(false);
+    }
+  }
+
+  function undoRevise() {
+    if (!draft || !draft.past?.length) return;
+    const past = [...draft.past];
+    const last = past.pop()!;
+    saveDraft({ ...draft, past, plan: last.plan });
   }
 
   async function handleConfirm() {
@@ -297,6 +359,55 @@ export default function PlanPreviewPage() {
                 />
               );
             })}
+          </div>
+        </section>
+
+        <section className="mb-8">
+          <h2 className="mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            对话式调整
+          </h2>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              用一句话告诉 AI 怎么改，例如「第二阶段缩短为 2 周」「每天任务量控制在 40 分钟内」
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !revising) handleRevise();
+                }}
+                placeholder="输入调整指令…"
+                className={inputClass}
+              />
+              <button
+                onClick={handleRevise}
+                disabled={revising || !instruction.trim()}
+                className="flex shrink-0 items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {revising && <Spinner />}
+                {revising ? "调整中…" : "发送"}
+              </button>
+            </div>
+            {(draft.past?.length ?? 0) > 0 && (
+              <div className="mt-3 space-y-2">
+                {draft.past!.map((p, i) => (
+                  <p key={i} className="text-xs text-zinc-500 dark:text-zinc-400">
+                    <span className="mr-1 rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-800">
+                      已应用
+                    </span>
+                    {p.instruction}
+                  </p>
+                ))}
+                <button
+                  onClick={undoRevise}
+                  className="min-h-[36px] rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+                >
+                  撤销上一次调整
+                </button>
+              </div>
+            )}
           </div>
         </section>
 

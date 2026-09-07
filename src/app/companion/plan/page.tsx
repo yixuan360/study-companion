@@ -66,6 +66,7 @@ export default async function CompanionPlanPage({
     weekDays.push({
       label: weekdayLabel(date),
       dateLabel: toISODate(date).slice(5).replace("-", "/"),
+      dateISO: toISODate(date),
       isToday: toISODate(date) === toISODate(today),
       tasks: weekTasks
         .filter((t) => toISODate(t.dueDate) === toISODate(date))
