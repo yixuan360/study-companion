@@ -81,6 +81,7 @@ ${buildTodayDigest(tasks)}`,
         },
       ],
       taskType: "simple",
+      module: "今日总结",
     });
 
     return NextResponse.json({

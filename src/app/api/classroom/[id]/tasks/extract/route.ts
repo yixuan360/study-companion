@@ -55,6 +55,7 @@ export async function POST(
     const result = await chat({
       messages: [{ role: "user", content: buildPrompt(processed) }],
       taskType: "simple",
+      module: "任务提取",
       responseFormat: "json",
     });
 

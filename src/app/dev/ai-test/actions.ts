@@ -22,6 +22,7 @@ export async function extractKeyPoints(text: string): Promise<ExtractResult> {
       },
     ],
     taskType: "simple",
+      module: "调试",
     responseFormat: "json",
   });
 

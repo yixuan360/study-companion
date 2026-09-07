@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getTodayReviewCards } from "@/modules/recite/today";
 import { addDays, startOfToday } from "@/modules/companion/plan";
@@ -136,6 +137,14 @@ export default async function Home() {
             />
           ))}
         </div>
+        <p className="mt-10 text-center">
+          <Link
+            href="/dev/ai-usage"
+            className="text-xs text-zinc-400 underline-offset-2 transition hover:text-zinc-600 hover:underline dark:text-zinc-500 dark:hover:text-zinc-300"
+          >
+            AI 用量与费用
+          </Link>
+        </p>
       </div>
     </main>
   );

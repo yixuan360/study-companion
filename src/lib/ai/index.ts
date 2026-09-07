@@ -15,6 +15,8 @@ export interface ChatOptions {
   messages: ChatMessage[];
   taskType: TaskType;
   responseFormat?: "json";
+  /** 业务模块标注（制卡/备考计划/图谱抽取…），写入 ApiLog.module 供用量统计 */
+  module?: string;
 }
 
 export interface ChatUsage {
@@ -125,6 +127,7 @@ async function callOnce(
 async function logCall(params: {
   config: ModelConfig;
   taskType: TaskType;
+  module?: string;
   usage: ChatUsage;
   durationMs: number;
   success: boolean;
@@ -137,6 +140,7 @@ async function logCall(params: {
         provider: params.config.provider,
         model: params.config.model,
         taskType: params.taskType,
+        module: params.module ?? null,
         promptTokens: params.usage.promptTokens,
         completionTokens: params.usage.completionTokens,
         totalTokens: params.usage.totalTokens,
@@ -164,6 +168,7 @@ export async function chat(options: ChatOptions): Promise<ChatResult> {
       await logCall({
         config,
         taskType: options.taskType,
+        module: options.module,
         usage,
         durationMs,
         success: true,
@@ -190,6 +195,7 @@ export async function chat(options: ChatOptions): Promise<ChatResult> {
         await logCall({
           config,
           taskType: options.taskType,
+          module: options.module,
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           durationMs: 0,
           success: false,

@@ -66,6 +66,7 @@ export async function POST(request: Request) {
         },
       ],
       taskType: "complex",
+      module: "备考计划",
       responseFormat: "json",
     });
 

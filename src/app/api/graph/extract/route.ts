@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     const result = await chat({
       messages: [{ role: "user", content: buildExtractPrompt(processed) }],
       taskType: "simple",
+      module: "图谱抽取",
       responseFormat: "json",
     });
 

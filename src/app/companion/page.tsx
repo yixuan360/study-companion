@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { BackLink } from "@/app/_components/BackLink";
 import { addDays, startOfToday } from "@/modules/companion/plan";
 import { daysUntil, startOfWeek, weekdayLabel } from "@/modules/companion/stats";
+import { GoalActions } from "./GoalActions";
 
 const categoryLabels: Record<string, string> = {
   exam: "考试",
@@ -153,9 +154,12 @@ export default async function CompanionPage() {
                     <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                       {goal.title}
                     </h2>
-                    <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
-                      {categoryLabels[goal.category] ?? goal.category}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                        {categoryLabels[goal.category] ?? goal.category}
+                      </span>
+                      <GoalActions goalId={goal.id} />
+                    </div>
                   </div>
                   <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
                     {remainDays > 0 ? (

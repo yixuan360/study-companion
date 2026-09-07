@@ -196,6 +196,7 @@ model ApiLog {
   provider         String
   model            String
   taskType         String
+  module           String?
   promptTokens     Int
   completionTokens Int
   totalTokens      Int

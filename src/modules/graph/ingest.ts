@@ -101,6 +101,7 @@ ${candidateList}
         },
       ],
       taskType: "simple",
+      module: "实体对齐",
       responseFormat: "json",
     });
 

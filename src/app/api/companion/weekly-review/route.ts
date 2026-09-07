@@ -133,6 +133,7 @@ ${executionText}
         },
       ],
       taskType: "complex",
+      module: "备考周报",
       responseFormat: "json",
     });
 
