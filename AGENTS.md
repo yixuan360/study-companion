@@ -97,13 +97,13 @@ a 段本地候选（name 精确/aliases 包含/name 双向包含，全量内存�
 - **陪伴**：建目标（AI 差距评估+阶段计划）→ 预览期对话式调整（多轮+撤销）→ 今日打卡 → AI 周报+下周计划（可 AI 调整再入库）→ 执行中手动编辑/改期/增删任务 → 目标归档/删除。
 - **班级**：轻量身份 → 建班/邀请链接 → AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 早晚推送 → SendKey 绑定。
 - **图谱**：喂入（AI 抽取→预览→两段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 冲突审阅队列 → 来源管理 → 成长视图 → 关系归一。
-- **基础设施**：AI 网关（module 标注+用量日志）、推送网关、AI 用量面板 `/dev/ai-usage`（含费用估算，`src/lib/ai/pricing.ts` 价格表需手工维护）、调试页 `/dev/*`。
+- **基础设施**：AI 网关（module 标注+用量日志）、推送网关、AI 用量面板 `/dev/ai-usage`（含费用估算，`src/lib/ai/pricing.ts` 价格表需手工维护）、调试页 `/dev/*`、本地自用部署（start:local + 调度器 + 每日备份）、最小 PWA、打卡乐观更新。
 
 ## 7. 待办与已知坑
 
 **环境配置**
 
-- 推送需 `.env` 配 `SERVER_CHAN_SEND_KEY`；定时提醒需 `CRON_SECRET`（已配本地值 `dev-local-secret-2026`），由外部 cron 请求 `/api/cron/*`。本机 crontab 示例（URL 前缀按部署地址替换）：
+- 推送需 `.env` 配 `SERVER_CHAN_SEND_KEY`；定时提醒需 `CRON_SECRET`（已配本地值 `dev-local-secret-2026`），本地自用由 `npm run start:local` 带起的 `scripts/scheduler.mts` 触发；上云服务器后改用系统 crontab（示例不变）。本机 crontab 示例（URL 前缀按部署地址替换）：
   ```
   0 8 * * * curl -s "http://localhost:3000/api/cron/classroom-push?secret=dev-local-secret-2026&mode=morning"
   0 20 * * * curl -s "http://localhost:3000/api/cron/classroom-push?secret=dev-local-secret-2026&mode=evening"
@@ -121,7 +121,7 @@ a 段本地候选（name 精确/aliases 包含/name 双向包含，全量内存�
 
 **陪伴**
 
-- 周报周日自动触发未做（现手动）；周报同周不可重生成（409），重生成需先删旧记录。
+- 周报同周不可重生成（409），重生成需先删旧记录。
 - 目标卡片无详情页；归档后无恢复入口；首页角标多目标未拆分；打卡无乐观更新。
 - **执行中修改阶段结构未做**（改周数连锁后续阶段日期与任务归属，易出脏数据）；预览撤销只回退 AI 调整栈（手动编辑清空），历史存 sessionStorage。
 

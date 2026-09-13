@@ -2,6 +2,18 @@
 
 > 2026-09-07 起 AGENTS.md 只保留「当前能力概览」，详细完成记录统一追加到本文件（替代原「只增不减」写在 AGENTS.md 里的做法）。
 
+## 2026-09-13（部署自用包）
+
+- [x] 周报生成逻辑抽为 `src/modules/companion/weekly-report.ts` 的 `generateWeeklyReport(goalId)`（route 薄壳化，行为不变）。
+- [x] cron 端点 `GET/POST /api/cron/weekly-review?secret=`：遍历 active 目标自动生成周报（已生成/无任务跳过，单目标失败不阻塞），下周任务仍手动确认入库。
+- [x] 备份：`scripts/backup.mts`（VACUUM INTO 在线备份 → `backups/`，保留 14 份）+ 纯函数 `pickBackupsToDelete`（3 单测）。
+- [x] 本地调度器 `scripts/scheduler.mts`（替代系统 cron）：班级早晚推送/背诵提醒/周日周报/每日备份；`--now` 立即全量调试；纯函数 `matchesSchedule`（4 单测）。
+- [x] 最小 PWA：`public/sw.js`（network-only）+ 生产环境注册组件挂根 layout；HTTP 局域网降级为主屏书签。
+- [x] 今日打卡乐观更新（useOptimistic，失败自动回滚+提示）；`/companion/today` 加载骨架。
+- [x] `npm run start:local`（`scripts/start-local.sh`：next start 0.0.0.0 + 调度器，Ctrl+C 同退）；README 重写为项目说明+自用部署小节。
+- [x] tsconfig 修复：`allowImportingTsExtensions: true`（87755bd），否则 `.mts` 脚本带扩展 import 使 `next build` 类型检查 TS5097 失败。
+- [x] 乐观更新 reducer 单测 `src/app/companion/today/apply-optimistic-action.test.ts`（3 例：标记完成重排+备注、撤销清空备注、缺省保留原备注）。
+
 ## 2026-09-07（图谱边归一 + 计划对话式调整）
 
 - [x] 图谱边归一（防边碎片化）：extract Prompt 增加标准动词表（是/包含/属于/导致/源于/解决/应用于/促进/抑制/需要/组成/使用/提升/降低）并要求短动词；`parseExtraction` 统一走 `normalizeRelation`（RELATION_SYNONYMS 同义映射 + INVERSE_RELATIONS 互逆方向归一〔属于→包含、源于→导致，端点对调〕+ 噪音词过滤〔与/相比/示例/相关…〕+ 批内三元组去重），预览与入库、清理脚本共用同一出口；存量清理脚本 `scripts/graph-normalize-edges.mts`（删噪音边 3 条、改写互逆/近义方向 15 条；冲突检测的 OPPOSITE_RELATIONS 基于归一后动词，误报减少）。
