@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useOptimistic, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface TaskDTO {
@@ -16,6 +16,37 @@ export interface TodaySection {
   goalId: string;
   goalTitle: string;
   tasks: TaskDTO[];
+}
+
+const statusOrder: Record<string, number> = { pending: 0, done: 1, skipped: 2 };
+
+interface OptimisticAction {
+  taskId: string;
+  status: TaskDTO["status"];
+  resultNote?: string;
+}
+
+export function applyOptimisticAction(
+  sections: TodaySection[],
+  action: OptimisticAction
+): TodaySection[] {
+  return sections.map((section) => ({
+    ...section,
+    tasks: section.tasks
+      .map((t) =>
+        t.id === action.taskId
+          ? {
+              ...t,
+              status: action.status,
+              resultNote:
+                action.status === "pending"
+                  ? null
+                  : (action.resultNote ?? t.resultNote),
+            }
+          : t
+      )
+      .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)),
+  }));
 }
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }) {
@@ -45,37 +76,43 @@ function Spinner({ className = "h-4 w-4" }: { className?: string }) {
 
 export default function TodayClient({ sections }: { sections: TodaySection[] }) {
   const router = useRouter();
+  const [optimisticSections, applyOptimistic] = useOptimistic(
+    sections,
+    applyOptimisticAction
+  );
   const [editing, setEditing] = useState<{
     taskId: string;
     mode: "done" | "skipped";
   } | null>(null);
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   const [feedbackLoading, setFeedbackLoading] = useState<Record<string, boolean>>({});
 
-  async function patchTask(taskId: string, status: TaskDTO["status"], resultNote?: string) {
+  function patchTask(taskId: string, status: TaskDTO["status"], resultNote?: string) {
     setError("");
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/companion/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, resultNote }),
-      });
-      const result = (await res.json()) as { code: number; msg: string };
-      if (result.code !== 0) {
-        throw new Error(result.msg || "打卡失败");
+    setEditing(null);
+    setNote("");
+    startTransition(async () => {
+      applyOptimistic({ taskId, status, resultNote });
+      try {
+        const res = await fetch(`/api/companion/tasks/${taskId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, resultNote }),
+        });
+        const result = (await res.json()) as { code: number; msg: string };
+        if (result.code !== 0) {
+          throw new Error(result.msg || "打卡失败");
+        }
+        router.refresh();
+      } catch (err) {
+        // 乐观状态随 transition 结束自动回滚，这里只需提示
+        setError(
+          `${err instanceof Error ? err.message : String(err)}，操作未生效，请重试`
+        );
       }
-      setEditing(null);
-      setNote("");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
-    }
+    });
   }
 
   async function generateFeedback(goalId: string) {
@@ -114,7 +151,7 @@ export default function TodayClient({ sections }: { sections: TodaySection[] }) 
         </div>
       )}
 
-      {sections.map((section) => {
+      {optimisticSections.map((section) => {
         const doneCount = section.tasks.filter((t) => t.status === "done").length;
         return (
           <section key={section.goalId}>
@@ -136,7 +173,6 @@ export default function TodayClient({ sections }: { sections: TodaySection[] }) 
                     editing?.taskId === task.id ? editing.mode : null
                   }
                   note={editing?.taskId === task.id ? note : ""}
-                  submitting={submitting}
                   inputClass={inputClass}
                   onStartEdit={(mode) => {
                     setEditing({ taskId: task.id, mode });
@@ -192,7 +228,6 @@ function TaskCard({
   task,
   editingMode,
   note,
-  submitting,
   inputClass,
   onStartEdit,
   onNoteChange,
@@ -203,7 +238,6 @@ function TaskCard({
   task: TaskDTO;
   editingMode: "done" | "skipped" | null;
   note: string;
-  submitting: boolean;
   inputClass: string;
   onStartEdit: (mode: "done" | "skipped") => void;
   onNoteChange: (value: string) => void;
@@ -284,7 +318,6 @@ function TaskCard({
             {editingMode === "skipped" && (
               <button
                 onClick={() => onConfirm()}
-                disabled={submitting}
                 className="min-h-[44px] rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 hover:border-zinc-300 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300"
               >
                 确认跳过
@@ -292,14 +325,13 @@ function TaskCard({
             )}
             <button
               onClick={onConfirm}
-              disabled={submitting}
               className={`min-h-[44px] rounded-xl px-4 py-2 text-sm font-medium text-white transition disabled:opacity-50 ${
                 editingMode === "done"
                   ? "bg-emerald-600 hover:bg-emerald-700"
                   : "bg-zinc-500 hover:bg-zinc-600"
               }`}
             >
-              {submitting ? "提交中..." : editingMode === "done" ? "确认完成" : "确认跳过"}
+              {editingMode === "done" ? "确认完成" : "确认跳过"}
             </button>
           </div>
         </div>
