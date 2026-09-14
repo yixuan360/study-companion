@@ -18,6 +18,79 @@ export interface GraphExtraction {
 }
 
 /**
+ * 领域词表（治理退化点① domain 自由文本碎片化，见 AGENTS.md）：
+ * domain 只能取词表值；抽取 Prompt 限定、parseExtraction 归一校验、存量清理脚本共用本常量。
+ * 新领域先进同义映射，确实高频再扩词表。
+ */
+export const DOMAIN_VOCABULARY = [
+  "数学",
+  "编程语言",
+  "机器学习",
+  "深度学习",
+  "人工智能",
+  "计算机视觉",
+  "数据结构",
+  "操作系统",
+  "计算机网络",
+  "数据库",
+  "其他",
+] as const;
+
+/** 词表外的兜底领域 */
+export const DEFAULT_DOMAIN: string = "其他";
+
+/**
+ * 领域同义映射：历史/常见变体 → 词表值。ASCII 键一律小写，查找时同时尝试原文与小写。
+ * 注意："计算机"是历史存量里的泛化标签（实测承载卷积网络内容），归深度学习；
+ * 复合标签（如 计算机/机器学习）在 normalizeDomain 里按段归一，不在此表展开。
+ */
+const DOMAIN_SYNONYMS: Record<string, string> = {
+  ml: "机器学习",
+  "machine learning": "机器学习",
+  机器学习基础: "机器学习",
+  机器学习入门: "机器学习",
+  dl: "深度学习",
+  "deep learning": "深度学习",
+  深度学习基础: "深度学习",
+  神经网络: "深度学习",
+  人工神经网络: "深度学习",
+  ai: "人工智能",
+  人工智能基础: "人工智能",
+  "计算机/人工智能": "人工智能",
+  cv: "计算机视觉",
+  "computer vision": "计算机视觉",
+  计算机: "深度学习",
+};
+
+/** 复合领域标签分隔符：AI 常输出"计算机/机器学习"这类路径式标签 */
+const DOMAIN_SEPARATORS = /[/／、,，]/;
+
+/**
+ * domain 归一：trim → 词表直取 → 同义映射 → 复合标签按段（最具体段优先）归一 → 兜底"其他"。
+ * 空值/非字符串一律落"其他"。预览、入库与存量清理脚本共用。
+ */
+export function normalizeDomain(raw: unknown): string {
+  const cleaned = (typeof raw === "string" ? raw : "").trim();
+  if (!cleaned) return DEFAULT_DOMAIN;
+  if ((DOMAIN_VOCABULARY as readonly string[]).includes(cleaned)) return cleaned;
+  const synonym = DOMAIN_SYNONYMS[cleaned] ?? DOMAIN_SYNONYMS[cleaned.toLowerCase()];
+  if (synonym) return synonym;
+  if (DOMAIN_SEPARATORS.test(cleaned)) {
+    const segments = cleaned
+      .split(DOMAIN_SEPARATORS)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i];
+      if ((DOMAIN_VOCABULARY as readonly string[]).includes(seg)) return seg;
+      const segSynonym = DOMAIN_SYNONYMS[seg] ?? DOMAIN_SYNONYMS[seg.toLowerCase()];
+      if (segSynonym) return segSynonym;
+    }
+  }
+  return DEFAULT_DOMAIN;
+}
+
+/**
  * 关系动词归一化（防边碎片化，见 AGENTS.md 图谱退化点②）：
  * ①同义动词映射为标准动词；②互逆动词（属于/源于…）归一为固定方向并调换端点。
  * 在 parseExtraction 阶段统一处理，预览与入库、存量清理脚本共用。
@@ -67,7 +140,7 @@ export function normalizeRelation(rel: {
 
 export function buildExtractPrompt(content: string): string {
   return `从以下内容中抽取结构化知识，输出严格 JSON：
-{"domain":"领域标签（如 计算机/英语/历史）",
+{"domain":"领域标签，只能从词表中选一个：${DOMAIN_VOCABULARY.join("/")}；都不贴近时填其他",
  "entities":[{"name":"知识点名","aliases":["别名"],"summary":"一句话解释"}],
  "relations":[{"from":"A","relation":"关系动词","to":"B","evidence":"原文依据片段"}]}
 要求：
@@ -97,7 +170,7 @@ export function parseExtraction(raw: unknown): GraphExtraction {
   }
   const obj = raw as Record<string, unknown>;
 
-  const domain = typeof obj.domain === "string" && obj.domain.trim() ? obj.domain.trim() : "未分类";
+  const domain = normalizeDomain(obj.domain);
   if (!Array.isArray(obj.entities)) {
     throw new Error("抽取结果缺少 entities");
   }

@@ -54,7 +54,7 @@ export default async function SourceDetailPage({
               {source.title}
             </h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {formatDate(source.createdAt)} · 领域 {meta.domain ?? "未分类"}
+              {formatDate(source.createdAt)} · 领域 {meta.domain ?? "其他"}
             </p>
           </div>
           <DeleteSourceButton sourceId={source.id} />
