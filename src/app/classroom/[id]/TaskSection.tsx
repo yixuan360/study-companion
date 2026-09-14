@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CLASS_TASK_TYPE_LABELS,
   PLATFORM_OPTIONS,
   type ExtractedTask,
 } from "@/modules/classroom/tasks";
+import {
+  assertScreenshotBase64,
+  MAX_SCREENSHOT_EDGE,
+  MAX_SCREENSHOT_FILE_BYTES,
+  resizeImageFile,
+} from "@/modules/classroom/image";
 
 export interface TaskItem {
   id: string;
@@ -31,6 +37,8 @@ interface DraftTask {
   course: string;
   type: string;
   confidence: number;
+  /** 入库来源：文本粘贴 or 截图识别 */
+  sourceType: "text" | "screenshot";
 }
 
 const TYPE_OPTIONS = Object.entries(CLASS_TASK_TYPE_LABELS);
@@ -85,7 +93,11 @@ const typeTag: Record<string, string> = {
 const inputClass =
   "w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50";
 
-function toDraft(task: ExtractedTask, index: number): DraftTask {
+function toDraft(
+  task: ExtractedTask,
+  index: number,
+  sourceType: DraftTask["sourceType"]
+): DraftTask {
   return {
     key: `${Date.now()}-${index}`,
     title: task.title,
@@ -95,6 +107,7 @@ function toDraft(task: ExtractedTask, index: number): DraftTask {
     course: task.course ?? "",
     type: task.type,
     confidence: task.confidence,
+    sourceType,
   };
 }
 
@@ -154,10 +167,52 @@ export function TaskSection({
         setNotice("没有从这段文字里识别出任务，可以换个说法或手动补充");
         setDrafts([]);
       } else {
-        setDrafts(result.data.tasks.map(toDraft));
+        setDrafts(result.data.tasks.map((t, i) => toDraft(t, i, "text")));
       }
       if (result.data.truncated) {
         setNotice("通知较长，仅提取前 5000 字");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function extractScreenshot(file: File) {
+    setError("");
+    setNotice("");
+    if (file.size > MAX_SCREENSHOT_FILE_BYTES) {
+      setError("图片过大（超过 15MB），请换一张截图");
+      return;
+    }
+    setExtracting(true);
+    try {
+      const { base64, mimeType } = await resizeImageFile(file, {
+        maxEdge: MAX_SCREENSHOT_EDGE,
+      });
+      assertScreenshotBase64(base64);
+      const res = await fetch(
+        `/api/classroom/${classroomId}/tasks/extract/screenshot`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64, mimeType }),
+        }
+      );
+      const result = (await res.json()) as {
+        code: number;
+        data: { tasks: ExtractedTask[] } | null;
+        msg: string;
+      };
+      if (result.code !== 0 || !result.data) {
+        throw new Error(result.msg || "识别失败");
+      }
+      if (result.data.tasks.length === 0) {
+        setNotice("没有从截图里识别出任务，可以换一张更清晰的截图或手动粘贴文字");
+        setDrafts([]);
+      } else {
+        setDrafts(result.data.tasks.map((t, i) => toDraft(t, i, "screenshot")));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -182,7 +237,7 @@ export function TaskSection({
             platform: d.platform,
             course: d.course || null,
             type: d.type,
-            sourceType: "text",
+            sourceType: d.sourceType,
           })),
         }),
       });
@@ -265,6 +320,9 @@ export function TaskSection({
       }}
       onDismissClipboard={() => setClipboardSuggestion(null)}
       onExtract={() => extract()}
+      onScreenshot={(file) => {
+        extractScreenshot(file);
+      }}
       onUpdateDraft={updateDraft}
       onRemoveDraft={removeDraft}
       onPublish={publish}
@@ -464,6 +522,7 @@ function ExtractPanel({
   onAcceptClipboard,
   onDismissClipboard,
   onExtract,
+  onScreenshot,
   onUpdateDraft,
   onRemoveDraft,
   onPublish,
@@ -480,6 +539,7 @@ function ExtractPanel({
   onAcceptClipboard: () => void;
   onDismissClipboard: () => void;
   onExtract: () => void;
+  onScreenshot: (file: File) => void;
   onUpdateDraft: (key: string, field: keyof DraftTask, value: string | number) => void;
   onRemoveDraft: (key: string) => void;
   onPublish: () => void;
@@ -518,6 +578,8 @@ function ExtractPanel({
       {notice && (
         <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{notice}</p>
       )}
+
+      <ScreenshotButton onFile={onScreenshot} disabled={extracting} />
 
       {drafts.length === 0 ? (
         <button
@@ -663,6 +725,60 @@ function ExtractPanel({
         </>
       )}
     </div>
+  );
+}
+
+/** 截图提取入口：选图后交回调压缩上传（仅移动端相册/拍照，桌面端选文件） */
+function ScreenshotButton({
+  onFile,
+  disabled,
+}: {
+  onFile: (file: File) => void;
+  disabled?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onFile(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled}
+        className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-medium text-zinc-600 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-indigo-700 dark:hover:text-indigo-300"
+      >
+        <CameraIcon />
+        从截图提取（拍作业通知 / 群聊截图）
+      </button>
+    </>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
   );
 }
 

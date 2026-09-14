@@ -6,9 +6,14 @@ import { getOpenAIClient } from "./client";
 
 export type { TaskType };
 
+/** OpenAI 兼容的多模态 content part（image_url 传 base64 data URL） */
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 export interface ChatOptions {
@@ -17,6 +22,8 @@ export interface ChatOptions {
   responseFormat?: "json";
   /** 业务模块标注（制卡/备考计划/图谱抽取…），写入 ApiLog.module 供用量统计 */
   module?: string;
+  /** 强制指定提供商（如多模态功能必须走 DeepSeek），缺省按 taskType 路由 */
+  provider?: ModelConfig["provider"];
 }
 
 export interface ChatUsage {
@@ -38,6 +45,15 @@ const JSON_SYSTEM_APPENDIX =
 const MAX_RETRIES = 1;
 const TIMEOUT_MS = 60_000;
 
+/** system 消息只保留文本：多模态 part（图片等）绝不并入 system 消息 */
+function toSystemText(content: string | ChatContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("\n");
+}
+
 function buildMessages(
   messages: ChatMessage[],
   responseFormat?: "json"
@@ -54,10 +70,9 @@ function buildMessages(
   for (const msg of messages) {
     if (msg.role === "system") {
       const existing = result[0].content;
+      const extra = toSystemText(msg.content);
       result[0].content =
-        typeof existing === "string"
-          ? `${existing}\n\n${msg.content}`
-          : msg.content;
+        typeof existing === "string" ? `${existing}\n\n${extra}` : extra;
     } else {
       result.push(msg as OpenAI.Chat.ChatCompletionMessageParam);
     }
@@ -156,7 +171,7 @@ async function logCall(params: {
 }
 
 export async function chat(options: ChatOptions): Promise<ChatResult> {
-  const config = getModelConfig(options.taskType);
+  const config = getModelConfig(options.taskType, options.provider);
   const messages = buildMessages(options.messages, options.responseFormat);
 
   let lastError: Error | undefined;
