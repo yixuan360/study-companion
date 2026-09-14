@@ -12,6 +12,8 @@ export interface ModelPrice {
 
 export const MODEL_PRICING: Record<string, ModelPrice> = {
   "deepseek-chat": { input: 2, output: 8 },
+  // V4.1 Flash 取高峰时段价（缓存未命中），空闲时段半价，实际更低
+  "deepseek-flash": { input: 2, output: 8 },
   "moonshot-v1-8k": { input: 12, output: 12 },
 };
 
