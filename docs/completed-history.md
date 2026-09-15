@@ -2,6 +2,33 @@
 
 > 2026-09-07 起 AGENTS.md 只保留「当前能力概览」，详细完成记录统一追加到本文件（替代原「只增不减」写在 AGENTS.md 里的做法）。
 
+## 2026-09-15（4C 冲刺 T1：班级通知截图 AI 提取 · 多模态）
+
+- [x] AI 网关多模态：`src/lib/ai/index.ts` 的 `ChatMessage.content` 扩展为 `string | ChatContentPart[]`（OpenAI 兼容 text + image_url base64 data URL）；`buildMessages()` 保持 system 合并进 result[0]，新增 `toSystemText()` 保证图片绝不并入 system；`ChatOptions.provider` 可强制指定提供商（不破坏现有签名）；`config.ts` 拆出 deepseek/kimi 配置。
+- [x] 新增 `src/modules/classroom/image.ts` 纯函数（`computeScaledSize` 最长边≤1600 等比缩放、`buildImageDataUrl`、`assertScreenshotBase64` 中文报错、`buildScreenshotContent`）+ 浏览器端 `resizeImageFile`（createImageBitmap→canvas→JPEG 0.85）；15 个单测。
+- [x] 新增并列路由 `POST /api/classroom/[id]/tasks/extract/screenshot`：isMember 数据隔离 → base64 校验 → 强制 `provider:"deepseek"`、`module:"classroom-screenshot"`、responseFormat json 调 chat() → 复用 `parseExtractedTasks` 归一化；Prompt 复用文本版 schema + 本地日期锚点，加「只提取图中明确写出的任务」；chat 失败按 image/图片/multimodal 等关键字提示「当前模型可能不支持图片（DEEPSEEK_MODEL=…）」。
+- [x] `TaskSection.tsx` 加截图提取入口（hidden file input，15MB 预检 → 压缩 → POST），复用现有预览确认发布 UI；`DraftTask.sourceType` 透传，入库 sourceType=screenshot；桌面与移动端底部弹层同一 panel 生效。
+- [x] 端到端真实冒烟（next start + PIL 渲染中文群聊截图）：未登录 401/空图 400/超限 400 中文报错；2 条作业通知正确提取（「本周五 17:00」「下周三晚 7 点」相对日期换算正确）；预览确认入库 sourceType=screenshot；ApiLog 记 module=classroom-screenshot/provider=deepseek/model=deepseek-flash。
+
+## 2026-09-15（4C 冲刺 T2：图谱领域标签归一）
+
+- [x] `extract.ts` 定义 `DOMAIN_VOCABULARY`（11 项词表：数学/编程语言/机器学习/深度学习/人工智能/计算机视觉/数据结构/操作系统/计算机网络/数据库/其他）+ `DOMAIN_SYNONYMS` 同义映射（ML→机器学习、DL/神经网络→深度学习、CV→计算机视觉、复合标签按段归一等）+ `normalizeDomain()` 纯函数（Prompt 限定词表 + parse 层归一兜底「其他」）；11 个单测。
+- [x] 新增 `scripts/graph-normalize-domains.mts`（仿 edges 脚本，支持 `--dry-run` 输出 nodeId/name/旧→新清单），存量 91 节点 + 17 来源快照清理：DISTINCT domain 12 个自由文本值 → 5 个词表值（幂等，重跑 0 变更）。
+- [x] UI 影响面：图谱筛选/成长视图/import/节点抽屉读归一后 domain 无需改动；来源详情页兜底文案「未分类」→「其他」统一。
+
+## 2026-09-15（4C 冲刺 T3：图谱三段式对齐——相似度候选召回）
+
+- [x] 新增 `src/modules/graph/candidates.ts`：首选 embedding 召回（OpenAI 兼容接口 `EMBEDDING_BASE_URL/API_KEY/MODEL`，向量存 `GraphNode.metadata` 惰性回填，余弦阈值 0.6）；兜底字符 n-gram 余弦（中文按字 bigram、英文整词+词内 bigram，集合语义加权余弦阈值 0.25/top-K 15，同分按 id 排序保确定性），纯函数 + 18 单测（含中英文 case）；实测 1200 节点×20 查询 72ms。
+- [x] 新增 `src/lib/ai/embed.ts` embedding 网关（写 ApiLog）；`ingest.ts` 两段式改三段式：a 段规则候选原样保留 → b 段相似度召回 → **取并集**进 c 段 AI 裁决（召回率不低于现状），对齐语义红线全未动，对外接口零变化。
+- [x] 对齐 Prompt 补强两条红线：「参数与权重应区分为不同概念」「策略≠作用对象/现象≠手段/统称≠实例，宁可新建也不要错合」。
+- [x] 压测对比（受控重放同输入 A/B + 全量复跑）：基线错合「参数⇒权重」清零、期望复用命中 5/7 持平（2  misses 为抽取漏实体的已知问题）；报告落 `docs/graph-alignment-benchmark.md`；新增常驻工具 `scripts/graph-stress-replay.mts`、基线存档 `graph-stress-results.baseline.json`。
+
+## 2026-09-15（4C 冲刺 T4：图谱 AI 裁决批量化）
+
+- [x] 新增 `src/modules/graph/adjudicate.ts`：`ADJUDICATION_BATCH_SIZE=8`（导出常量可调）、`buildBatchPrompt`（逐项 #编号 + 第 4 条「逐项独立判断禁止跨项」）、`parseBatchVerdicts` 纯函数（index 回定位，缺项/越界/重复/非法候选 id 判 invalid），10 个单测。
+- [x] `ingest.ts` c 段改批量：篇内分批一次 chat 裁多项；invalid 项逐个走原单条裁决重裁，整批失败全部逐条兜底——均保持保守建新、不影响同批其他项；对外接口与 IngestResult 零变化（批不跨篇：每次 ingest 是独立请求）。
+- [x] 受控重放对比：AI 裁决调用 25→13 次（11 批+2 兜底）、裁决耗时 33.7s→11.9s（-65%）、ingest 端到端 -25%；复用命中/错合/最终图与 T3 逐节点一致；数据追加进 benchmark 文档。
+
 ## 2026-09-15（4C 冲刺 T11：背诵四档自评 UI）
 
 - [x] 新纯函数模块 `src/modules/recite/rating-options.ts`：`buildRatingOptions(card)` 按 forgot/hard/good/easy 顺序生成四档自评按钮展示数据（label 重来/困难/良好/简单 + hint 下次复习间隔），每档 hint 取自 `scheduleReview` 真实输出（≤1 天显示「明天再见」，其余「N 天后再见」，顶档钳位 30 天）；复习页按钮展示与调度结果天然一致。5 个 vitest 用例（`rating-options.test.ts`：顺序/文案、新卡四档提示、入档卡四档提示、顶档钳位、逐档与 scheduleReview 一致性）。

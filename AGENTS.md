@@ -22,7 +22,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Next.js App Router 16.3.4 · TypeScript ^5 · React 19 + Tailwind CSS 4 · Prisma ^6（SQLite，未来可能迁 PG）· vitest。
 
-- `src/lib/ai`：AI 统一网关（DeepSeek 默认 / Kimi 复杂任务，60s 超时，重试 1 次，写 `ApiLog`）。
+- `src/lib/ai`：AI 统一网关（DeepSeek 默认 / Kimi 复杂任务，60s 超时，重试 1 次，写 `ApiLog`）；`ChatMessage.content` 支持多模态 content part（image_url base64，`provider:"deepseek"` 强制多模态模型）；`embed.ts` 为 OpenAI 兼容 embedding 网关（配 `EMBEDDING_*` 启用）。
 - `src/lib/push`：推送统一网关（Server 酱 Turbo，`pushToUser({ sendKey?, title, content })`）。
 - `src/lib/auth.ts`：轻量账号（sessionToken httpOnly cookie 30 天，`getCurrentUser()`）。
 - `src/lib/db.ts`：Prisma Client 单例。
@@ -42,8 +42,8 @@ study-companion/
     │   ├── dev/           # 调试页：ai-test / ai-usage / push-test / reset-today
     │   ├── _components/   # BackLink / ModuleCard 等通用组件
     │   ├── classroom/     # identity(建身份) / join(邀请落地) / settings / [id](班级空间+任务编辑)
-    │   ├── companion/     # page(首页) / new(向导+preview) / plan(周视图+tasks/[taskId]编辑页) / today
-    │   ├── graph/         # page(力导向图) / import / review / sources / growth / _components/GraphTabs
+    │   ├── companion/     # page(首页+已归档折叠区) / new(向导+preview) / plan(周视图+tasks/[taskId]编辑页) / today / goal/[id](详情+阶段调整)
+    │   ├── graph/         # page(力导向图) / import / review(冲突+合并存疑) / sources / cleanup(待清理节点) / growth / _components/GraphTabs
     │   ├── recite/        # page(入口) / import / materials(+[id]) / review
     │   └── layout.tsx / manifest.ts / globals.css
     ├── generated/prisma/  # Prisma Client 生成产物（勿手动修改）
@@ -56,7 +56,7 @@ study-companion/
 - `recite`：艾宾浩斯调度 `scheduler.ts`（纯函数+测试）、四档自评选项 `rating-options.ts`（按钮文案+下次间隔提示组装，纯函数+测试）、今日查询 `today.ts`（materialId/新卡上限）、统计 `stats.ts`、推送 `reminder.ts`、actions.ts。
 - `companion`：`plan.ts`（parsePlan 校验/日期纯函数）、`stats.ts`（周一为起点周统计/连续打卡，日期纯函数重导出）、`goal-detail.ts`（目标详情页展示组装，纯函数）、`reschedule.ts`（执行中改阶段周数的变更计划，纯函数+测试）、`weekly.ts`（周报输出校验）、`memory.ts`（记忆包）、`actions.ts`（目标归档/恢复/删除、阶段调整预览/落库）。
 - `classroom`：`actions.ts`（身份/建班/加入/SendKey/任务删除/邀请码重新生成/退出班级）、`membership.ts`（数据隔离唯一入口）、`invite.ts`（邀请码有效期常量+过期判断纯函数）、`tasks.ts`（校验归一化）、`reminder.ts`（早晚推送）。
-- `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`candidates.ts`（相似度候选召回：embedding 优先/n-gram 兜底，纯函数）、`adjudicate.ts`（批量裁决 Prompt + parseBatchVerdicts，纯函数）、`ingest.ts`（三段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突裁决）。
+- `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`candidates.ts`（相似度候选召回：embedding 优先/n-gram 兜底，纯函数）、`adjudicate.ts`（批量裁决 Prompt + parseBatchVerdicts，纯函数）、`ingest.ts`（三段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突与 align 裁决/待清理节点管理）。
 
 ## 4. 关键机制（改动前必须读）
 
@@ -95,7 +95,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 
 - **背诵**：AI 制卡（预览确认入库）→ 艾宾浩斯复习流（四档自评重来/困难/良好/简单、每日新卡上限可调、原文折叠、按材料复习）→ 统计（累计/连续天数）→ 定时/手动推送提醒。
 - **陪伴**：建目标（AI 差距评估+阶段计划）→ 预览期对话式调整（多轮+撤销）→ 今日打卡 → AI 周报+下周计划（可 AI 调整再入库）→ 执行中手动编辑/改期/增删任务 → 执行中调整阶段结构（详情页改周数→变更计划预览确认→事务落库）→ 目标详情页 → 归档（首页折叠区可恢复）/删除。
-- **班级**：轻量身份 → 建班/邀请链接（7 天有效，过期仅班长可重新生成，退出班级入口在班级空间页）→ AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 任务编辑/删除（仅录入人或班长可删，二次确认）→ 早晚推送 → SendKey 绑定。
+- **班级**：轻量身份 → 建班/邀请链接（7 天有效，过期仅班长可重新生成，退出班级入口在班级空间页）→ AI 提取通知任务（文本粘贴/截图识别，预览确认发布，sourceType=text/screenshot）→ 任务流（三色预警、个人完成态）→ 任务编辑/删除（仅录入人或班长可删，二次确认）→ 早晚推送 → SendKey 绑定。
 - **图谱**：喂入（AI 抽取→预览→三段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 审阅队列（合并存疑 align + 关系冲突 conflict，人工裁决）→ 来源管理 → 待清理节点（删来源归零标记，可删/恢复）→ 成长视图 → 关系归一。
 - **基础设施**：AI 网关（module 标注+用量日志）、推送网关、AI 用量面板 `/dev/ai-usage`（含费用估算，`src/lib/ai/pricing.ts` 价格表需手工维护）、调试页 `/dev/*`、本地自用部署（start:local + 调度器 + 每日备份）、最小 PWA、打卡乐观更新。
 
@@ -125,7 +125,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 - 首页角标多目标未拆分。
 - 预览撤销只回退 AI 调整栈（手动编辑清空），历史存 sessionStorage。
 
-**班级**：截图提取未实现；单设备单 token 无找回；Server 酱免费版 5 条/分钟。
+**班级**：单设备单 token 无找回；Server 酱免费版 5 条/分钟。
 
 **图谱**
 
