@@ -17,6 +17,13 @@
 - [x] 周报 cron `GET/POST /api/cron/weekly-review` 核对：查询本就 `where: { status: "active" }`，只处理进行中目标，无需改动。
 - [x] 端到端验证（`next start` + HTTP 直调 Server Action）：归档→恢复→再归档→再恢复全流程 DB 状态与页面渲染（进行中列表/已归档折叠区/详情页已归档角标）全部正确，DB 还原为初始状态。
 
+## 2026-09-15（4C 冲刺 T7：班级任务删除入口）
+
+- [x] `src/modules/classroom/actions.ts` 新增 `deleteClassTaskAction(classroomId, taskId)`：`requireMembership` 先校验成员（非成员 `forbidden()` 403）→ `findFirst({ where: { id, classroomId } })` 取任务（禁止按 id 直取，`include` 带出 `Classroom.creatorId` 一次查全）→ 权限：仅任务录入人（`createdBy`）或班级创建者（班长）可删，否则返回可读错误 `{ error }`；`prisma.classTask.delete` 删除，`TaskCompletion` 靠 schema `onDelete: Cascade` 级联清理（无需手动）；`revalidatePath("/classroom/[id]")`。
+- [x] 任务编辑页 `/classroom/[id]/tasks/[taskId]`：页面层计算 `canDelete`（录入人/班长），普通成员不渲染删除入口（页面按钮与 action 双层拦截）；新增 `TaskDeleteButton.tsx`（GoalActions 首点确认态模式：首点「删除任务」→ 内联确认条「确认删除/取消」+ 后果提示文案，按钮触摸目标 ≥44px，删除后 `router.push` 回班级空间页）；错误以红条内联展示。
+- [x] 端到端验证（`next start` + HTTP 直调 Server Action，DB 备份/还原）：录入人删自己任务 ✓、班长删任意成员任务 ✓、普通成员直调 action 返回可读错误且页面无删除按钮 ✓、删除后班级空间任务流消失且 `TaskCompletion` 级联清零 ✓。
+- [x] AGENTS.md §7 待办「班级任务无删除入口」移除，§6 班级能力概览补「任务编辑/删除（仅录入人或班长可删，二次确认）」。
+
 ## 2026-09-13（部署自用包）
 
 - [x] 周报生成逻辑抽为 `src/modules/companion/weekly-report.ts` 的 `generateWeeklyReport(goalId)`（route 薄壳化，行为不变）。

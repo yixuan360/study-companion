@@ -9,6 +9,7 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
 } from "@/lib/auth";
+import { requireMembership } from "@/modules/classroom/membership";
 
 export interface FormState {
   error: string;
@@ -242,4 +243,38 @@ export async function signOutAction(): Promise<void> {
   const cookieStore = await import("next/headers").then((m) => m.cookies());
   cookieStore.delete(SESSION_COOKIE);
   redirect("/classroom/identity");
+}
+
+/**
+ * 删除班级任务：仅任务录入人（createdBy）或班级创建者（班长）可删。
+ * TaskCompletion 由 schema 的 onDelete: Cascade 级联清理，无需手动删除。
+ */
+export async function deleteClassTaskAction(
+  classroomId: string,
+  taskId: string
+): Promise<{ error: string }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/classroom/identity");
+  }
+
+  // 数据隔离纪律：非成员直接 403
+  await requireMembership(classroomId, user.id);
+
+  // 按 id + classroomId 取任务（禁止按 id 直取），同时带出班长 id 做权限判断
+  const task = await prisma.classTask.findFirst({
+    where: { id: taskId, classroomId },
+    include: { classroom: { select: { creatorId: true } } },
+  });
+  if (!task) {
+    return { error: "任务不存在或已被删除" };
+  }
+  if (task.createdBy !== user.id && task.classroom.creatorId !== user.id) {
+    return { error: "只有任务录入人或班长可以删除该任务" };
+  }
+
+  await prisma.classTask.delete({ where: { id: task.id } });
+
+  revalidatePath(`/classroom/${classroomId}`);
+  return { error: "" };
 }

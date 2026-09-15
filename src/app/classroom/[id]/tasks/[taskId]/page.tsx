@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { requireMembership } from "@/modules/classroom/membership";
 import { BackLink } from "@/app/_components/BackLink";
 import { TaskEditForm } from "./TaskEditForm";
+import { TaskDeleteButton } from "./TaskDeleteButton";
 
 export default async function TaskEditPage({
   params,
@@ -18,7 +19,7 @@ export default async function TaskEditPage({
 
   const classroom = await prisma.classroom.findUnique({
     where: { id },
-    select: { name: true },
+    select: { name: true, creatorId: true },
   });
   if (!classroom) {
     notFound();
@@ -42,6 +43,9 @@ export default async function TaskEditPage({
     select: { id: true, name: true },
   });
   const nameById = new Map(users.map((u) => [u.id, u.name ?? "已注销成员"]));
+
+  // 删除权限：任务录入人或班长；普通成员不渲染删除入口
+  const canDelete = task.createdBy === user.id || classroom.creatorId === user.id;
 
   return (
     <main className="min-h-svh bg-zinc-50 px-4 py-6 dark:bg-black sm:px-6">
@@ -76,6 +80,12 @@ export default async function TaskEditPage({
               : null,
           }}
         />
+
+        {canDelete && (
+          <div className="mt-6">
+            <TaskDeleteButton classroomId={id} taskId={task.id} />
+          </div>
+        )}
       </div>
     </main>
   );
