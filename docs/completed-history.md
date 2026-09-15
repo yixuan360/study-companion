@@ -2,6 +2,14 @@
 
 > 2026-09-07 起 AGENTS.md 只保留「当前能力概览」，详细完成记录统一追加到本文件（替代原「只增不减」写在 AGENTS.md 里的做法）。
 
+## 2026-09-15（4C 冲刺 T5：陪伴目标详情页）
+
+- [x] 纯函数模块 `src/modules/companion/goal-detail.ts`：`buildGoalDetail`/`buildPhaseRows`/`buildReportRows`/`normalizeRiskLevel` + 风险等级样式表 `RISK_LEVEL_STYLES`（与 plan 页共用，PlanClient 删本地重复定义）；页面层只查库，展示组装全部可测（8 单测）。
+- [x] 日期纯函数归位：`toISODate`/`startOfWeek`/`daysUntil`/`weekdayLabel` 从 stats.ts 移至 plan.ts（stats.ts 重导出保持既有 import 路径），消除纯函数对 prisma 的传递依赖，纯模块可被 vitest 直接测。
+- [x] 页面 `/companion/goal/[id]`：基本信息（标题/类别/截止/剩 N 天/每日分钟/创建于/累计进度条）、现状自述 + AI 差距评估（metadata.assessment）、阶段时间线（当前阶段高亮、past/current/upcoming 圆点、各阶段完成度 done/total · %）、历史周报倒序（风险灯 + 周标签 + 完成率 + 摘要 + 调整建议）、`GoalActions` 归档/删除（操作后返回首页）；不存在 id `notFound()`；入口「本周计划与打卡」跳 plan 页。
+- [x] `GoalActions.tsx` 增加可选 props：`archived`（已归档目标隐藏归档按钮，详情页显示「已归档」角标）、`afterActionHref`（操作完成跳转，详情页传 `/companion`）；首页不传，行为不变。
+- [x] 首页 `/companion` 目标卡片：标题链接 + 底部「查看详情 →」入口（触摸目标 ≥44px）。
+
 ## 2026-09-13（部署自用包）
 
 - [x] 周报生成逻辑抽为 `src/modules/companion/weekly-report.ts` 的 `generateWeeklyReport(goalId)`（route 薄壳化，行为不变）。

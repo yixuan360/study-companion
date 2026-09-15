@@ -54,7 +54,7 @@ study-companion/
 ### 模块职责（`src/modules/`）
 
 - `recite`：艾宾浩斯调度 `scheduler.ts`（纯函数+测试）、今日查询 `today.ts`（materialId/新卡上限）、统计 `stats.ts`、推送 `reminder.ts`、actions.ts。
-- `companion`：`plan.ts`（parsePlan 校验/日期纯函数）、`stats.ts`（周一为起点周统计/连续打卡）、`weekly.ts`（周报输出校验）、`memory.ts`（记忆包）、`actions.ts`（目标归档/删除）。
+- `companion`：`plan.ts`（parsePlan 校验/日期纯函数）、`stats.ts`（周一为起点周统计/连续打卡，日期纯函数重导出）、`goal-detail.ts`（目标详情页展示组装，纯函数）、`weekly.ts`（周报输出校验）、`memory.ts`（记忆包）、`actions.ts`（目标归档/删除）。
 - `classroom`：`actions.ts`（身份/建班/加入/SendKey）、`membership.ts`（数据隔离唯一入口）、`tasks.ts`（校验归一化）、`reminder.ts`（早晚推送）。
 - `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`candidates.ts`（相似度候选召回：embedding 优先/n-gram 兜底，纯函数）、`adjudicate.ts`（批量裁决 Prompt + parseBatchVerdicts，纯函数）、`ingest.ts`（三段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突裁决）。
 
@@ -122,7 +122,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 **陪伴**
 
 - 周报同周不可重生成（409），重生成需先删旧记录。
-- 目标卡片无详情页；归档后无恢复入口；首页角标多目标未拆分。
+- 归档后无恢复入口（T6 做归档列表与恢复）；首页角标多目标未拆分。
 - **执行中修改阶段结构未做**（改周数连锁后续阶段日期与任务归属，易出脏数据）；预览撤销只回退 AI 调整栈（手动编辑清空），历史存 sessionStorage。
 
 **班级**：截图提取未实现；单设备单 token 无找回；邀请码无过期/退出班级；班级任务无删除入口；Server 酱免费版 5 条/分钟。

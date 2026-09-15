@@ -150,3 +150,30 @@ export function computeTaskDueDate(
 ): Date {
   return addDays(today, day - 1);
 }
+
+/** 本地自然日的 YYYY-MM-DD，用于去重与展示。 */
+export function toISODate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** 以周一为一周开始的本周零点。 */
+export function startOfWeek(date = new Date()): Date {
+  const d = startOfDay(date);
+  const mondayOffset = (d.getDay() + 6) % 7;
+  return addDays(d, -mondayOffset);
+}
+
+export function daysUntil(deadline: Date, today = startOfToday()): number {
+  return Math.ceil(
+    (startOfDay(deadline).getTime() - today.getTime()) / 86_400_000
+  );
+}
+
+const weekdayLabels = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+export function weekdayLabel(date: Date): string {
+  return weekdayLabels[(date.getDay() + 6) % 7];
+}

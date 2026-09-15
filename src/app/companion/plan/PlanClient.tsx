@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { RISK_LEVEL_STYLES } from "@/modules/companion/goal-detail";
 
 export interface PlanData {
   goals: { id: string; title: string }[];
@@ -43,27 +44,6 @@ export interface PlanData {
   nextWeekConfirmed: boolean;
   nextWeekStartISO: string;
 }
-
-const riskStyles: Record<
-  string,
-  { dot: string; label: string; text: string }
-> = {
-  low: {
-    dot: "bg-emerald-500",
-    label: "状态良好",
-    text: "text-emerald-700 dark:text-emerald-300",
-  },
-  medium: {
-    dot: "bg-amber-500",
-    label: "需要关注",
-    text: "text-amber-700 dark:text-amber-300",
-  },
-  high: {
-    dot: "bg-red-500",
-    label: "进度风险高",
-    text: "text-red-700 dark:text-red-300",
-  },
-};
 
 const dayNames = ["下周一", "下周二", "下周三", "下周四", "下周五", "下周六", "下周日"];
 
@@ -468,12 +448,12 @@ export default function PlanClient({ data }: { data: PlanData }) {
             <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="mb-2 flex items-center gap-2">
                 <span
-                  className={`h-3 w-3 rounded-full ${riskStyles[data.report.riskLevel].dot}`}
+                  className={`h-3 w-3 rounded-full ${RISK_LEVEL_STYLES[data.report.riskLevel].dot}`}
                 />
                 <span
-                  className={`text-sm font-semibold ${riskStyles[data.report.riskLevel].text}`}
+                  className={`text-sm font-semibold ${RISK_LEVEL_STYLES[data.report.riskLevel].text}`}
                 >
-                  {riskStyles[data.report.riskLevel].label}
+                  {RISK_LEVEL_STYLES[data.report.riskLevel].label}
                 </span>
                 <span className="ml-auto text-xs text-zinc-400 dark:text-zinc-500">
                   完成率 {Math.round(data.report.completionRate)}%

@@ -7,6 +7,7 @@ import {
   toISODate,
   weekdayLabel,
 } from "@/modules/companion/stats";
+import { normalizeRiskLevel } from "@/modules/companion/goal-detail";
 import { BackLink } from "@/app/_components/BackLink";
 import PlanClient, { type PlanData } from "./PlanClient";
 
@@ -107,7 +108,7 @@ export default async function CompanionPlanPage({
     weekDays,
     report: report
       ? {
-          riskLevel: (reportMeta?.riskLevel ?? "low") as "low" | "medium" | "high",
+          riskLevel: normalizeRiskLevel(reportMeta?.riskLevel),
           summary: report.aiSummary,
           adjustments: report.adjustments,
           completionRate: report.completionRate,

@@ -151,9 +151,14 @@ export default async function CompanionPage() {
                   className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
                 >
                   <div className="mb-1 flex items-start justify-between gap-3">
-                    <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                      {goal.title}
-                    </h2>
+                    <Link
+                      href={`/companion/goal/${goal.id}`}
+                      className="flex min-h-[44px] min-w-0 items-center rounded-lg text-left transition hover:text-indigo-600 active:scale-[0.99] dark:hover:text-indigo-400"
+                    >
+                      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                        {goal.title}
+                      </h2>
+                    </Link>
                     <div className="flex shrink-0 items-center gap-2">
                       <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
                         {categoryLabels[goal.category] ?? goal.category}
@@ -214,6 +219,15 @@ export default async function CompanionPage() {
                       "今日暂无任务"
                     )}
                   </p>
+
+                  <div className="mt-3 border-t border-zinc-100 pt-1 dark:border-zinc-800">
+                    <Link
+                      href={`/companion/goal/${goal.id}`}
+                      className="inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-indigo-600 transition hover:text-indigo-700 active:scale-[0.98] dark:text-indigo-400 dark:hover:text-indigo-300"
+                    >
+                      查看详情<span aria-hidden>→</span>
+                    </Link>
+                  </div>
                 </div>
               );
             })}

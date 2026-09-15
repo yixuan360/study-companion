@@ -4,7 +4,15 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { archiveGoalAction, deleteGoalAction } from "@/modules/companion/actions";
 
-export function GoalActions({ goalId }: { goalId: string }) {
+export function GoalActions({
+  goalId,
+  archived = false,
+  afterActionHref,
+}: {
+  goalId: string;
+  archived?: boolean;
+  afterActionHref?: string;
+}) {
   const router = useRouter();
   const [confirming, setConfirming] = useState<null | "delete" | "archive">(null);
   const [pending, startTransition] = useTransition();
@@ -18,6 +26,7 @@ export function GoalActions({ goalId }: { goalId: string }) {
         router.refresh();
       }
       setConfirming(null);
+      if (afterActionHref) router.push(afterActionHref);
     });
   }
 
@@ -71,12 +80,14 @@ export function GoalActions({ goalId }: { goalId: string }) {
 
   return (
     <div className="flex gap-1">
-      <button
-        onClick={() => setConfirming("archive")}
-        className="min-h-[36px] rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-      >
-        归档
-      </button>
+      {!archived && (
+        <button
+          onClick={() => setConfirming("archive")}
+          className="min-h-[36px] rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        >
+          归档
+        </button>
+      )}
       <button
         onClick={() => setConfirming("delete")}
         className="min-h-[36px] rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
