@@ -35,6 +35,14 @@
 - [x] 端到端验证（`next start` + HTTP 直调 Server Action，测试行已清理）：过期邀请码加入被拒（重定向 invite-expired 横幅渲染 ✓）、非创建者重新生成被拒、班长重新生成后新码 7 天有效且可用其加入 ✓、创建者退出被拒、普通成员退出后班级页 403 且其 TaskCompletion 保留 ✓；`npm test` 93/93、lint 0 error、build 通过。
 - [x] AGENTS.md §7 待办「邀请码无过期/退出班级」移除，§3/§6 同步班级模块职责与能力概览。
 
+## 2026-09-15（4C 冲刺 T9：执行中修改阶段结构）
+
+- [x] 新纯函数模块 `src/modules/companion/reschedule.ts`：`planReschedule(phases, tasks, newWeeks)` 输出完整变更计划（阶段新 startDate/endDate + 任务 dueDate/phaseId 迁移映射，含中文 reason）；规则：锚定首阶段现有开始日按新周数连续排布（与 computePhaseDates 同约定）、任务保留 dueDate 按新区间重挂 phaseId、越界任务收敛到首/末阶段边界日（绝不丢任务/置空 phaseId）、phaseId 本就 null 的任务不动；`toReschedulePreview` 转可序列化确认清单（MM/DD 区间 + 统计数）；`phaseWeeks` 取现有周数。10 个 vitest 用例覆盖：延长/缩短中间阶段、连锁平移、被删区间任务迁移、越界收敛（首/末）、跨阶段移动、边界日（末天含/次日）、零变更、乱序输入、非法周数校验、null 任务不动。
+- [x] Server Actions（`actions.ts`）：`previewRescheduleAction`（只算不落库）与 `applyRescheduleAction`（transaction 内更新全部阶段日期 + 任务改期/迁移，落库时重算计划——与预览同一纯函数；revalidate 详情页/plan/today 三路径）。
+- [x] UI（详情页阶段时间线头部「调整阶段」入口，`[id]/ReschedulePanel.tsx`，仅 active 目标）：各阶段周数输入 → 「生成变更计划」→ 确认清单（X 个阶段日期变更 · Y 个任务改期 · Z 个任务变更归属，逐阶段旧→新区间、逐任务改期/归属/reason，零变更禁用落库）→ 「确认落库」；编辑即作废旧预览防脏确认；触摸目标 ≥44px，组件体无 Date.now 等非纯调用。
+- [x] 端到端验证（`next start` + HTTP 直调 Server Action，临时任务验后删、DB 还原）：P2 6→7 周预览正确（P2 10/06~11/23、P3 连锁 +7、P3 区间任务迁移到 P2、日期不变）；落库后 DB 精确符合计划、14 个既有任务零变动；plan 页阶段区间/详情页时间线显示新日期；today 页可见内容与调整前逐字一致（仅 flight 流内部偏移不同）；回滚 [4,6,4] 后阶段日期与初始快照完全一致。
+- [x] AGENTS.md §7 待办「执行中修改阶段结构未做」移除，§3 模块职责加 reschedule.ts，§6 陪伴概览补「执行中调整阶段结构」。
+
 ## 2026-09-13（部署自用包）
 
 - [x] 周报生成逻辑抽为 `src/modules/companion/weekly-report.ts` 的 `generateWeeklyReport(goalId)`（route 薄壳化，行为不变）。

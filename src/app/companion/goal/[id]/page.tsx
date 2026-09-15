@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { BackLink } from "@/app/_components/BackLink";
-import { startOfToday } from "@/modules/companion/plan";
+import { startOfToday, toISODate } from "@/modules/companion/plan";
 import {
   buildGoalDetail,
   RISK_LEVEL_STYLES,
 } from "@/modules/companion/goal-detail";
+import { phaseWeeks } from "@/modules/companion/reschedule";
 import { GoalActions } from "../../GoalActions";
+import { ReschedulePanel } from "./ReschedulePanel";
 
 export default async function GoalDetailPage({
   params,
@@ -123,16 +125,30 @@ export default async function GoalDetailPage({
           </section>
 
           <section>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
                 阶段时间线
               </h2>
-              <Link
-                href={`/companion/plan?goalId=${detail.id}`}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-3 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50 active:scale-[0.98] dark:text-indigo-400 dark:hover:bg-indigo-900/20"
-              >
-                本周计划与打卡<span aria-hidden>→</span>
-              </Link>
+              <div className="flex shrink-0 items-center">
+                <Link
+                  href={`/companion/plan?goalId=${detail.id}`}
+                  className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-3 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50 active:scale-[0.98] dark:text-indigo-400 dark:hover:bg-indigo-900/20"
+                >
+                  本周计划与打卡<span aria-hidden>→</span>
+                </Link>
+                {detail.status === "active" && phases.length > 0 && (
+                  <ReschedulePanel
+                    goalId={detail.id}
+                    phases={phases.map((p) => ({
+                      id: p.id,
+                      name: p.name,
+                      order: p.order,
+                      weeks: phaseWeeks(p.startDate, p.endDate),
+                      rangeLabel: `${toISODate(p.startDate).slice(5).replace("-", "/")} ~ ${toISODate(p.endDate).slice(5).replace("-", "/")}`,
+                    }))}
+                  />
+                )}
+              </div>
             </div>
 
             {detail.phases.length === 0 ? (
