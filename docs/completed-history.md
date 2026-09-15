@@ -10,6 +10,13 @@
 - [x] `GoalActions.tsx` 增加可选 props：`archived`（已归档目标隐藏归档按钮，详情页显示「已归档」角标）、`afterActionHref`（操作完成跳转，详情页传 `/companion`）；首页不传，行为不变。
 - [x] 首页 `/companion` 目标卡片：标题链接 + 底部「查看详情 →」入口（触摸目标 ≥44px）。
 
+## 2026-09-15（4C 冲刺 T6：归档目标列表与恢复）
+
+- [x] `src/modules/companion/actions.ts` 新增 `restoreGoalAction`（status archived→active + `revalidatePath("/companion")`），与归档/删除同风格。
+- [x] 首页 `/companion` 底部新增「已归档目标（N）」折叠区（`ArchivedGoals.tsx`，默认收起）：列出归档目标（标题/类别/截止），「恢复」按钮沿用 GoalActions 二次确认模式（恢复后回到进行中列表），触摸目标 ≥44px；渲染独立于进行中列表空态——唯一目标归档后也能在首页恢复。
+- [x] 周报 cron `GET/POST /api/cron/weekly-review` 核对：查询本就 `where: { status: "active" }`，只处理进行中目标，无需改动。
+- [x] 端到端验证（`next start` + HTTP 直调 Server Action）：归档→恢复→再归档→再恢复全流程 DB 状态与页面渲染（进行中列表/已归档折叠区/详情页已归档角标）全部正确，DB 还原为初始状态。
+
 ## 2026-09-13（部署自用包）
 
 - [x] 周报生成逻辑抽为 `src/modules/companion/weekly-report.ts` 的 `generateWeeklyReport(goalId)`（route 薄壳化，行为不变）。

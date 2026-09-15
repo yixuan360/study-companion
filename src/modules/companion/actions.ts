@@ -14,3 +14,9 @@ export async function archiveGoalAction(goalId: string): Promise<void> {
   await prisma.goal.update({ where: { id: goalId }, data: { status: "archived" } });
   revalidatePath("/companion");
 }
+
+/** 恢复目标：从归档回到进行中列表 */
+export async function restoreGoalAction(goalId: string): Promise<void> {
+  await prisma.goal.update({ where: { id: goalId }, data: { status: "active" } });
+  revalidatePath("/companion");
+}

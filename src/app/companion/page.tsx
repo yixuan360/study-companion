@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { BackLink } from "@/app/_components/BackLink";
-import { addDays, startOfToday } from "@/modules/companion/plan";
+import { addDays, startOfToday, toISODate } from "@/modules/companion/plan";
 import { daysUntil, startOfWeek, weekdayLabel } from "@/modules/companion/stats";
 import { GoalActions } from "./GoalActions";
+import { ArchivedGoals } from "./ArchivedGoals";
 
 const categoryLabels: Record<string, string> = {
   exam: "考试",
@@ -20,6 +21,12 @@ export default async function CompanionPage() {
   const goals = await prisma.goal.findMany({
     where: { status: "active" },
     orderBy: { createdAt: "asc" },
+  });
+
+  const archivedGoals = await prisma.goal.findMany({
+    where: { status: "archived" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, title: true, category: true, deadline: true },
   });
 
   const weekTasks = await prisma.task.findMany({
@@ -238,6 +245,19 @@ export default async function CompanionPage() {
             >
               + 再定一个新目标
             </Link>
+          </div>
+        )}
+
+        {archivedGoals.length > 0 && (
+          <div className={goals.length === 0 ? "" : "mt-4"}>
+            <ArchivedGoals
+              goals={archivedGoals.map((g) => ({
+                id: g.id,
+                title: g.title,
+                categoryLabel: categoryLabels[g.category] ?? g.category,
+                deadlineLabel: toISODate(g.deadline),
+              }))}
+            />
           </div>
         )}
       </div>
