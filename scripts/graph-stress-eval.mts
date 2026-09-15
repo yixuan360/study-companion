@@ -1,8 +1,12 @@
 /** 压测评估：对照清单 A/B 逐项计算指标 */
+/** 用法：npx tsx scripts/graph-stress-eval.mts [结果文件路径，默认 scripts/graph-stress-results.json] */
+import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "../src/generated/prisma/client";
 
 const prisma = new PrismaClient();
+
+const RESULTS_PATH = process.argv[2] ?? "scripts/graph-stress-results.json";
 
 interface Record {
   seq?: number;
@@ -15,6 +19,7 @@ interface Record {
   newNodes?: number;
   reusedNodes?: number;
   conflicts?: number;
+  elapsedMs?: number;
   alignments?: { name: string; matchedId: string | null; matchedName: string | null; reason: string }[];
   expect?: { entityStem: string; targetStem: string | null }[];
   stats?: { nodeCount: number; edgeCount: number; sourceCount: number; domains: { name: string; count: number }[] };
@@ -27,7 +32,7 @@ interface Record {
   error?: string;
 }
 
-const records: Record[] = readFileSync("scripts/graph-stress-results.json", "utf8")
+const records: Record[] = readFileSync(RESULTS_PATH, "utf8")
   .trim()
   .split("\n")
   .map((l) => JSON.parse(l));
@@ -88,6 +93,22 @@ console.log(`有效期望复用 ${validExpect} 次，命中 ${hit} 次 → 正�
 if (misses.length) console.log("未命中明细:\n  " + misses.join("\n  "));
 console.log(`疑似错合（需人工复核）${wrongMerges.length} 条:`);
 console.log(wrongMerges.length ? "  " + wrongMerges.join("\n  ") : "  无");
+
+console.log("\n== 2.5 对齐开销（AI 裁决调用次数 / 召回候选命中 / 耗时） ==");
+// 有本地候选（含相似度召回）才会触发 AI 裁决；"无本地候选"= 未触发
+const adjudicated = articles.flatMap((r) =>
+  (r.alignments ?? []).filter((a) => a.reason !== "无本地候选")
+);
+console.log(`AI 裁决调用 ${adjudicated.length} 次（判定复用 ${adjudicated.filter((a) => a.matchedId).length} 次）`);
+const totalMs = articles.reduce((s, r) => s + (r.elapsedMs ?? 0), 0);
+const timed = articles.filter((r) => r.elapsedMs !== undefined);
+if (timed.length) {
+  console.log(
+    `端到端耗时：总计 ${(totalMs / 1000).toFixed(1)}s，篇均 ${(totalMs / timed.length / 1000).toFixed(1)}s（n=${timed.length}，仅含记录了 elapsedMs 的运行）`
+  );
+} else {
+  console.log("端到端耗时：结果文件未记录 elapsedMs（旧版 runner），跳过");
+}
 
 console.log("\n== 3. 重复节点扫描（同义节点对） ==");
 const allNodes = checkpoints[checkpoints.length - 1]?.nodes ?? [];

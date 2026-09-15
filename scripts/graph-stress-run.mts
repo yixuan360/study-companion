@@ -2,12 +2,13 @@
  * 图谱压力测试运行器（阶段4验收）
  * 用法：npx tsx scripts/graph-stress-run.mts <start> <end>
  *   按下标区间喂入文章（左闭右开），走真实管线：AI extract → ingest。
- *   结果追加到 scripts/graph-stress-results.json，每 4 篇做一次指标快照。
+ *   结果追加到 scripts/graph-stress-results.json（可用 STRESS_RESULTS 覆盖路径），每 4 篇做一次指标快照。
+ *   每篇记录 elapsedMs（extract+ingest  wall time），可用 STRESS_BASE 覆盖服务地址。
  */
 import { readFileSync, appendFileSync, existsSync } from "node:fs";
 
-const BASE = "http://localhost:3000";
-const RESULTS_FILE = "scripts/graph-stress-results.json";
+const BASE = process.env.STRESS_BASE ?? "http://localhost:3000";
+const RESULTS_FILE = process.env.STRESS_RESULTS ?? "scripts/graph-stress-results.json";
 
 interface Expectation {
   entityStem: string; // 实体名关键词
@@ -155,6 +156,8 @@ interface ResultRecord {
   incrementedEdges: number;
   conflicts: number;
   skippedRelations: number;
+  /** extract+ingest 端到端 wall time（毫秒），用于耗时对比 */
+  elapsedMs: number;
   alignments: { name: string; matchedId: string | null; matchedName: string | null; reason: string }[];
   expect: Expectation[];
   error?: string;
@@ -217,6 +220,7 @@ async function main() {
 
   for (let i = start; i < Math.min(end, articles.length); i++) {
     const article = articles[i];
+    const articleStart = Date.now();
     process.stdout.write(`[${i + 1}/${articles.length}] ${article.title} … `);
 
     // 1) AI 抽取
@@ -270,6 +274,7 @@ async function main() {
       incrementedEdges: r.incrementedEdges,
       conflicts: r.conflicts,
       skippedRelations: r.skippedRelations,
+      elapsedMs: Date.now() - articleStart,
       alignments: r.alignments.map((a: { name: string; matched: string | null; reason: string }) => ({
         name: a.name,
         matchedId: a.matched,
@@ -281,7 +286,7 @@ async function main() {
 
     appendFileSync(RESULTS_FILE, JSON.stringify(record) + "\n");
     console.log(
-      `+${r.newNodes} 新节点 / ${r.reusedNodes} 复用 / +${r.newEdges} 边(+${r.incrementedEdges}权重) / ${r.conflicts} 冲突 / 跳过${r.skippedRelations}`
+      `+${r.newNodes} 新节点 / ${r.reusedNodes} 复用 / +${r.newEdges} 边(+${r.incrementedEdges}权重) / ${r.conflicts} 冲突 / 跳过${r.skippedRelations}（${Date.now() - articleStart}ms）`
     );
 
     if ((i + 1) % 4 === 0) {

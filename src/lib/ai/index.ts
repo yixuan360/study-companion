@@ -6,6 +6,9 @@ import { getOpenAIClient } from "./client";
 
 export type { TaskType };
 
+export { embedTexts, getEmbeddingConfig } from "./embed";
+export type { EmbeddingConfig } from "./embed";
+
 /** OpenAI 兼容的多模态 content part（image_url 传 base64 data URL） */
 export type ChatContentPart =
   | { type: "text"; text: string }

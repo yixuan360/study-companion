@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
-import { chat } from "@/lib/ai";
+import { chat, embedTexts, getEmbeddingConfig } from "@/lib/ai";
 import type { Prisma } from "@/generated/prisma/client";
+import {
+  RECALL_TOP_K,
+  embedTextOf,
+  recallCandidates,
+  type RecallableNode,
+} from "./candidates";
 import type {
   ExtractedEntity,
   GraphExtraction,
@@ -42,19 +48,33 @@ function readAliases(value: unknown): string[] {
     : [];
 }
 
-interface ExistingNode {
-  id: string;
-  name: string;
-  aliases: string[];
+function readMetadata(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readEmbedding(value: unknown): number[] | null {
+  return Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((v) => typeof v === "number" && Number.isFinite(v))
+    ? value
+    : null;
+}
+
+interface ExistingNode extends RecallableNode {
   summary: string;
+  /** 原始 metadata（回填 embedding 时无损合并其余键） */
+  metadata: Record<string, unknown>;
 }
 
 /**
- * 两段式实体对齐：
- * a. 本地候选——name 精确 / aliases 包含 / name 双向包含。中文场景 SQLite 无大小写
- *    不敏感索引，单机节点量小，全量加载后内存匹配即可；节点破千时改为候选检索
- *    （域名过滤 + LIKE 前缀），见 AGENTS.md 已知事项。
- * b. AI 裁决——仅对有候选的实体调用，判定同一概念或全新概念。
+ * 三段式实体对齐：
+ * a. 规则候选——name 精确 / aliases 包含 / name 双向包含（全量内存匹配，O(N)，
+ *    与召回层同一趟循环完成；N 破千后本层开销不变，因为不再依赖它单独产出候选）。
+ * b. 相似度召回——embedding 可用走向量余弦 top-K（向量存 metadata，惰性回填），
+ *    否则字符 n-gram 余弦兜底；与规则命中取并集，召回率不低于原两段式。
+ * c. AI 裁决——仅对并集非空的实体调用，判定同一概念或全新概念。
  */
 export async function alignEntity(
   entity: ExtractedEntity,
@@ -79,11 +99,26 @@ export async function alignEntity(
     }
   }
 
+  // b 段：相似度召回（embedding 可用走向量，否则 n-gram 兜底），与规则命中取并集
+  const embedConfig = getEmbeddingConfig();
+  const recalled = await recallCandidates(
+    { name: entity.name, aliases: entity.aliases },
+    existingNodes,
+    embedConfig
+      ? { model: embedConfig.model, embedTexts: (texts) => embedTexts({ texts, module: "实体对齐" }) }
+      : undefined
+  );
+  for (const { node } of recalled) {
+    candidates.set(node.id, node);
+  }
+
   if (candidates.size === 0) {
     return { matchedId: null, reason: "无本地候选" };
   }
 
+  // 规则命中优先，召回补充至 top-K，约束 AI Prompt 大小
   const candidateList = [...candidates.values()]
+    .slice(0, RECALL_TOP_K)
     .map((n) => `- ${n.id} ${n.name}（摘要：${n.summary}）`)
     .join("\n");
 
@@ -96,7 +131,10 @@ export async function alignEntity(
 图谱中已有相似节点：
 ${candidateList}
 判断新知识点与哪个已有节点是同一概念，还是全新概念。
-注意：上下位概念（如"卷积神经网络"与"神经网络"）不算同一概念；不确定时返回 null。
+注意：
+1. 上下位概念（如"卷积神经网络"与"神经网络"）不算同一概念；不确定时返回 null。
+2. 参数与权重应区分为不同概念：参数是可训练变量的统称，权重只是参数的一种。
+3. 策略与其作用对象、现象与其缓解手段、统称与具体实例都不算同一概念（如"学习率衰减"≠"学习率"）；宁可新建也不要错合。
 输出严格 JSON：{"match": 节点id 或 null, "reason": "一句话"}`,
         },
       ],
@@ -138,16 +176,59 @@ export async function ingestGraph(input: {
   }
   const batchEntities = [...batchByName.values()];
 
-  const existingNodes = (await prisma.graphNode.findMany({
-    select: { id: true, name: true, aliases: true, summary: true },
-  })).map((n) => ({
-    id: n.id,
-    name: n.name,
-    aliases: readAliases(n.aliases),
-    summary: n.summary,
-  }));
+  const existingNodes: ExistingNode[] = (await prisma.graphNode.findMany({
+    select: { id: true, name: true, aliases: true, summary: true, metadata: true },
+  })).map((n) => {
+    const metadata = readMetadata(n.metadata);
+    return {
+      id: n.id,
+      name: n.name,
+      aliases: readAliases(n.aliases),
+      summary: n.summary,
+      metadata,
+      embedding: readEmbedding(metadata.embedding),
+      embeddingModel:
+        typeof metadata.embeddingModel === "string" ? metadata.embeddingModel : null,
+    };
+  });
 
-  // b 段：AI 裁决（仅命中本地候选的实体需要，相互独立并行执行）
+  // embedding 惰性回填：配置了 embedding 服务且节点缺失/模型过期时补向量（失败降级 n-gram）
+  const embedConfig = getEmbeddingConfig();
+  if (embedConfig) {
+    const stale = existingNodes.filter(
+      (n) => !n.embedding || n.embeddingModel !== embedConfig.model
+    );
+    if (stale.length > 0) {
+      try {
+        const vectors = await embedTexts({
+          texts: stale.map(embedTextOf),
+          module: "实体对齐",
+        });
+        await Promise.all(
+          stale.map((n, i) =>
+            prisma.graphNode.update({
+              where: { id: n.id },
+              data: {
+                metadata: {
+                  ...n.metadata,
+                  embedding: vectors[i],
+                  embeddingModel: embedConfig.model,
+                },
+              },
+            })
+          )
+        );
+        stale.forEach((n, i) => {
+          n.embedding = vectors[i];
+          n.embeddingModel = embedConfig.model;
+        });
+      } catch (err) {
+        console.error("[graph/ingest] embedding 回填失败，降级 n-gram 召回:", err);
+      }
+    }
+  }
+
+  // c 段：AI 裁决（仅并集候选非空的实体需要，相互独立并行执行）
   const alignments = await Promise.all(
     batchEntities.map(async (entity) => ({
       entity,

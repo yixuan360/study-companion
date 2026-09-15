@@ -56,7 +56,7 @@ study-companion/
 - `recite`：艾宾浩斯调度 `scheduler.ts`（纯函数+测试）、今日查询 `today.ts`（materialId/新卡上限）、统计 `stats.ts`、推送 `reminder.ts`、actions.ts。
 - `companion`：`plan.ts`（parsePlan 校验/日期纯函数）、`stats.ts`（周一为起点周统计/连续打卡）、`weekly.ts`（周报输出校验）、`memory.ts`（记忆包）、`actions.ts`（目标归档/删除）。
 - `classroom`：`actions.ts`（身份/建班/加入/SendKey）、`membership.ts`（数据隔离唯一入口）、`tasks.ts`（校验归一化）、`reminder.ts`（早晚推送）。
-- `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`ingest.ts`（两段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突裁决）。
+- `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`candidates.ts`（相似度候选召回：embedding 优先/n-gram 兜底，纯函数）、`ingest.ts`（三段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突裁决）。
 
 ## 4. 关键机制（改动前必须读）
 
@@ -73,9 +73,9 @@ study-companion/
 
 关键设计：**任务共享、完成状态个人化**——`ClassTask` 全班一份，`TaskCompletion`（taskId+userId 唯一）记各人状态。
 
-### 图谱两段式实体对齐（不退化的核心）
+### 图谱三段式实体对齐（不退化的核心）
 
-a 段本地候选（name 精确/aliases 包含/name 双向包含，全量内存匹配，**节点破千须改候选检索**）→ b 段 AI 裁决（仅对有候选的实体，上下位概念不算同一概念，不确定返回 null，失败保守建新）。匹配成功复用（mentionCount+1、别名并集≤20、主名不变）；关系 `@@unique(from,to,relation)` 已存在则 weight+1；端点不在实体表的关系被过滤（禁止脑补）。语义相反关系（OPPOSITE_RELATIONS）只记录 `MergeReview` 不阻塞，人工三选一裁决。溯源 `NodeSource`；删来源保守处理（mentionCount-1，归零标 `pendingCleanup`）。
+a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存匹配，O(N) 一趟）→ b 段相似度召回（`candidates.ts`：配了 OpenAI 兼容 embedding 接口则向量余弦 top-K，向量存 `GraphNode.metadata` 惰性回填；否则字符 n-gram 余弦兜底，中文按字 bigram、英文整词+词内 bigram，阈值 0.25/top-K 15）→ 两段结果**取并集**进 c 段 AI 裁决（仅对有候选的实体，上下位概念不算同一概念，参数≠权重，策略≠作用对象，不确定返回 null，失败保守建新）。匹配成功复用（mentionCount+1、别名并集≤20、主名不变）；关系 `@@unique(from,to,relation)` 已存在则 weight+1；端点不在实体表的关系被过滤（禁止脑补）。语义相反关系（OPPOSITE_RELATIONS）只记录 `MergeReview` 不阻塞，人工三选一裁决。溯源 `NodeSource`；删来源保守处理（mentionCount-1，归零标 `pendingCleanup`）。对比报告见 `docs/graph-alignment-benchmark.md`。
 
 ### 图谱关系归一（防边碎片化）
 
@@ -96,7 +96,7 @@ a 段本地候选（name 精确/aliases 包含/name 双向包含，全量内存�
 - **背诵**：AI 制卡（预览确认入库）→ 艾宾浩斯复习流（两档自评、每日新卡上限可调、原文折叠、按材料复习）→ 统计（累计/连续天数）→ 定时/手动推送提醒。
 - **陪伴**：建目标（AI 差距评估+阶段计划）→ 预览期对话式调整（多轮+撤销）→ 今日打卡 → AI 周报+下周计划（可 AI 调整再入库）→ 执行中手动编辑/改期/增删任务 → 目标归档/删除。
 - **班级**：轻量身份 → 建班/邀请链接 → AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 早晚推送 → SendKey 绑定。
-- **图谱**：喂入（AI 抽取→预览→两段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 冲突审阅队列 → 来源管理 → 成长视图 → 关系归一。
+- **图谱**：喂入（AI 抽取→预览→三段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 冲突审阅队列 → 来源管理 → 成长视图 → 关系归一。
 - **基础设施**：AI 网关（module 标注+用量日志）、推送网关、AI 用量面板 `/dev/ai-usage`（含费用估算，`src/lib/ai/pricing.ts` 价格表需手工维护）、调试页 `/dev/*`、本地自用部署（start:local + 调度器 + 每日备份）、最小 PWA、打卡乐观更新。
 
 ## 7. 待办与已知坑
