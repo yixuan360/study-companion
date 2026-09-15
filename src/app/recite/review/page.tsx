@@ -4,12 +4,20 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BackLink } from "@/app/_components/BackLink";
-import { scheduleReview } from "@/modules/recite/scheduler";
+import { buildRatingOptions } from "@/modules/recite/rating-options";
+import type { ReviewResult } from "@/modules/recite/scheduler";
 import type { Card, Material } from "@/generated/prisma/client";
 
-type ReviewResult = "forgot" | "good";
-
 const DAILY_LIMIT_OPTIONS = [5, 10, 20];
+
+/** 四档自评按钮配色：重来(rose) → 困难(amber) → 良好(emerald) → 简单(sky) */
+const RATE_BUTTON_CLASS: Record<ReviewResult, string> = {
+  forgot:
+    "rounded-xl bg-rose-100 py-4 text-base font-semibold text-rose-700 transition hover:bg-rose-200 active:bg-rose-300 disabled:opacity-50 dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60",
+  hard: "rounded-xl bg-amber-100 py-4 text-base font-semibold text-amber-700 transition hover:bg-amber-200 active:bg-amber-300 disabled:opacity-50 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60",
+  good: "rounded-xl bg-emerald-100 py-4 text-base font-semibold text-emerald-700 transition hover:bg-emerald-200 active:bg-emerald-300 disabled:opacity-50 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60",
+  easy: "rounded-xl bg-sky-100 py-4 text-base font-semibold text-sky-700 transition hover:bg-sky-200 active:bg-sky-300 disabled:opacity-50 dark:bg-sky-900/40 dark:text-sky-300 dark:hover:bg-sky-900/60",
+};
 
 interface TodayResponse {
   code: number;
@@ -232,18 +240,11 @@ function ReviewPageInner() {
     return null;
   }, [currentCard, judgePick]);
 
-  // 「记得」后的下次复习时间预览
-  const goodPreview = useMemo(() => {
-    if (!currentCard) return null;
-    return scheduleReview({
-      mastery: currentCard.mastery,
-      intervalDays: currentCard.intervalDays,
-      reviewCount: currentCard.reviewCount,
-      lapseCount: currentCard.lapseCount,
-      goodStreak: currentCard.goodStreak,
-      result: "good",
-    });
-  }, [currentCard]);
+  // 四档自评的下次复习间隔预览（与 scheduler 输出一致）
+  const ratingOptions = useMemo(
+    () => (currentCard ? buildRatingOptions(currentCard) : []),
+    [currentCard],
+  );
 
   function handleShowAnswer() {
     setShowAnswer(true);
@@ -516,27 +517,20 @@ function ReviewPageInner() {
               </div>
             )}
 
-            {/* 自评按钮（两档） */}
+            {/* 自评按钮（四档） */}
             {showAnswer && (
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleRate("forgot")}
-                  disabled={submitting}
-                  className="rounded-xl bg-rose-100 py-4 text-base font-semibold text-rose-700 transition hover:bg-rose-200 active:bg-rose-300 disabled:opacity-50 dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
-                >
-                  <span className="block">忘了</span>
-                  <span className="mt-0.5 block text-xs font-normal opacity-80">明天再见</span>
-                </button>
-                <button
-                  onClick={() => handleRate("good")}
-                  disabled={submitting}
-                  className="rounded-xl bg-emerald-100 py-4 text-base font-semibold text-emerald-700 transition hover:bg-emerald-200 active:bg-emerald-300 disabled:opacity-50 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
-                >
-                  <span className="block">记得</span>
-                  <span className="mt-0.5 block text-xs font-normal opacity-80">
-                    {goodPreview ? `${goodPreview.intervalDays} 天后再见` : ""}
-                  </span>
-                </button>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {ratingOptions.map((option) => (
+                  <button
+                    key={option.result}
+                    onClick={() => handleRate(option.result)}
+                    disabled={submitting}
+                    className={RATE_BUTTON_CLASS[option.result]}
+                  >
+                    <span className="block">{option.label}</span>
+                    <span className="mt-0.5 block text-xs font-normal opacity-80">{option.hint}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>

@@ -53,7 +53,7 @@ study-companion/
 
 ### 模块职责（`src/modules/`）
 
-- `recite`：艾宾浩斯调度 `scheduler.ts`（纯函数+测试）、今日查询 `today.ts`（materialId/新卡上限）、统计 `stats.ts`、推送 `reminder.ts`、actions.ts。
+- `recite`：艾宾浩斯调度 `scheduler.ts`（纯函数+测试）、四档自评选项 `rating-options.ts`（按钮文案+下次间隔提示组装，纯函数+测试）、今日查询 `today.ts`（materialId/新卡上限）、统计 `stats.ts`、推送 `reminder.ts`、actions.ts。
 - `companion`：`plan.ts`（parsePlan 校验/日期纯函数）、`stats.ts`（周一为起点周统计/连续打卡，日期纯函数重导出）、`goal-detail.ts`（目标详情页展示组装，纯函数）、`reschedule.ts`（执行中改阶段周数的变更计划，纯函数+测试）、`weekly.ts`（周报输出校验）、`memory.ts`（记忆包）、`actions.ts`（目标归档/恢复/删除、阶段调整预览/落库）。
 - `classroom`：`actions.ts`（身份/建班/加入/SendKey/任务删除/邀请码重新生成/退出班级）、`membership.ts`（数据隔离唯一入口）、`invite.ts`（邀请码有效期常量+过期判断纯函数）、`tasks.ts`（校验归一化）、`reminder.ts`（早晚推送）。
 - `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`candidates.ts`（相似度候选召回：embedding 优先/n-gram 兜底，纯函数）、`adjudicate.ts`（批量裁决 Prompt + parseBatchVerdicts，纯函数）、`ingest.ts`（三段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突裁决）。
@@ -93,7 +93,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 
 ## 6. 当前能力概览（详见 docs/completed-history.md）
 
-- **背诵**：AI 制卡（预览确认入库）→ 艾宾浩斯复习流（两档自评、每日新卡上限可调、原文折叠、按材料复习）→ 统计（累计/连续天数）→ 定时/手动推送提醒。
+- **背诵**：AI 制卡（预览确认入库）→ 艾宾浩斯复习流（四档自评重来/困难/良好/简单、每日新卡上限可调、原文折叠、按材料复习）→ 统计（累计/连续天数）→ 定时/手动推送提醒。
 - **陪伴**：建目标（AI 差距评估+阶段计划）→ 预览期对话式调整（多轮+撤销）→ 今日打卡 → AI 周报+下周计划（可 AI 调整再入库）→ 执行中手动编辑/改期/增删任务 → 执行中调整阶段结构（详情页改周数→变更计划预览确认→事务落库）→ 目标详情页 → 归档（首页折叠区可恢复）/删除。
 - **班级**：轻量身份 → 建班/邀请链接（7 天有效，过期仅班长可重新生成，退出班级入口在班级空间页）→ AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 任务编辑/删除（仅录入人或班长可删，二次确认）→ 早晚推送 → SendKey 绑定。
 - **图谱**：喂入（AI 抽取→预览→三段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 审阅队列（合并存疑 align + 关系冲突 conflict，人工裁决）→ 来源管理 → 待清理节点（删来源归零标记，可删/恢复）→ 成长视图 → 关系归一。
@@ -117,7 +117,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 - Windows Git Bash 用 `curl -d '含中文'` 发 GBK 乱码，中文 payload 写 UTF-8 文件后 `--data-binary @file`。
 - `GET /api/graph/data` 节点 >200 时只回 mentionCount≥2；echarts 容器必须显式高度。
 
-**背诵**：单用户本地 Demo；复习页只暴露两档自评但 API/DB 保留四档；造数据用 `/dev/reset-today` 或材料详情页「重置复习进度」。
+**背诵**：单用户本地 Demo；造数据用 `/dev/reset-today` 或材料详情页「重置复习进度」。
 
 **陪伴**
 

@@ -2,6 +2,14 @@
 
 > 2026-09-07 起 AGENTS.md 只保留「当前能力概览」，详细完成记录统一追加到本文件（替代原「只增不减」写在 AGENTS.md 里的做法）。
 
+## 2026-09-15（4C 冲刺 T11：背诵四档自评 UI）
+
+- [x] 新纯函数模块 `src/modules/recite/rating-options.ts`：`buildRatingOptions(card)` 按 forgot/hard/good/easy 顺序生成四档自评按钮展示数据（label 重来/困难/良好/简单 + hint 下次复习间隔），每档 hint 取自 `scheduleReview` 真实输出（≤1 天显示「明天再见」，其余「N 天后再见」，顶档钳位 30 天）；复习页按钮展示与调度结果天然一致。5 个 vitest 用例（`rating-options.test.ts`：顺序/文案、新卡四档提示、入档卡四档提示、顶档钳位、逐档与 scheduleReview 一致性）。
+- [x] 复习页 `/recite/review` 两档自评升级四档：`grid grid-cols-2 gap-3 sm:grid-cols-4`（移动端 2×2，sm 以上四列横排），按钮 `py-4` + label/hint 双行 ≈74px ≥44px 触摸目标；配色 rose→amber→emerald→sky 渐进；`ReviewResult` 类型直接复用 scheduler 导出（删掉页面本地两档 type）；调度逻辑零改动。
+- [x] 完成总结页口径不变：forgotCount 只统计「重来」，困难/良好/简单均算记住（hard 不下调阶梯只是保持当前档）。
+- [x] 端到端验证（`next start` + HTTP）：复习页 200 渲染（Suspense 骨架正常），客户端 chunk 含四档文案与间隔提示；四档各做一次真实 POST `/api/recite/review`（easy/hard/forgot/good 覆盖脏数据 interval=3 取档、保持当前档、重置第 1 档、阶梯推进四种路径），独立 tsx 脚本按 scheduler.ts 逐字段断言 4 项全 PASS（含 nextReviewAt 天级核对），ReviewLog 4 条落库确认；验收后 dev.db 还原基线（还原后复查卡片状态与历史日志均回到测试前）、taskkill 杀净 node 子进程。
+- [x] `npm test` 112 用例全过（scheduler 16 用例原样通过）、`npm run lint` 0 error（仅存量 2 warning）、`npm run build` 通过。AGENTS.md §3/§6/§7 同步（「两档自评」→四档、删「API/DB 保留四档」待办）。
+
 ## 2026-09-15（4C 冲刺 T10：图谱 pendingCleanup 清理页 + align 审阅启用）
 
 - [x] **pendingCleanup 清理页** `/graph/cleanup`：挂入 GraphTabs（桌面顶部 + 移动端底部，🧹 清理）。标记存储形式确认为 `metadata.pendingCleanup: true` + 本次新增 `pendingCleanupAt`（ISO 时间，`deleteSourceAction` 归零时写入）。页面 `force-dynamic`（管理页数据随时变，避免构建期静态快照）；`mentionCount=0` 库内收窄 + 内存过滤。`deleteCleanupNodeAction` 事务内二次校验标记后删除（GraphEdge/NodeSource 外键 `onDelete: Cascade` 自动级联，验收实测 0 孤儿边）；`restoreCleanupNodeAction` 撤销标记 + mentionCount 重置 1（UI 文案明示）。
