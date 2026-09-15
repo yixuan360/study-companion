@@ -24,6 +24,17 @@
 - [x] 端到端验证（`next start` + HTTP 直调 Server Action，DB 备份/还原）：录入人删自己任务 ✓、班长删任意成员任务 ✓、普通成员直调 action 返回可读错误且页面无删除按钮 ✓、删除后班级空间任务流消失且 `TaskCompletion` 级联清零 ✓。
 - [x] AGENTS.md §7 待办「班级任务无删除入口」移除，§6 班级能力概览补「任务编辑/删除（仅录入人或班长可删，二次确认）」。
 
+## 2026-09-15（4C 冲刺 T8：邀请码过期 + 退出班级）
+
+- [x] 迁移 `20260915052020_add_classroom_invite_expire`：`Classroom` 新增 `inviteExpireAt DateTime?`（null = 永久有效，兼容存量数据），migration 文件同步生成。
+- [x] 新纯函数模块 `src/modules/classroom/invite.ts`：导出常量 `INVITE_EXPIRE_DAYS = 7`、`inviteExpireAtFrom(now)`、`isInviteExpired(expireAt, now)`（now 入参以兼容 react 纯度 lint）；5 个 vitest 用例（`invite.test.ts`）。
+- [x] 建班/重新生成邀请码统一默认 7 天有效期（`createClassroomAction` 与 `regenerateInviteCodeAction` 同用 `inviteExpireAtFrom`）；`regenerateInviteCodeAction(classroomId)` 仅班级创建者可操作（新 code + 新有效期，邀请码唯一索引冲突换码重试 3 次，复用建班逻辑）。
+- [x] 加入过期校验三处共用一个 helper：`joinClassroomAction`（表单）返回可读错误「邀请码已过期，请联系班长重新生成」；`joinByInviteCodeAction`（邀请链接）与 `createIdentityAction`（建身份自动入班）重定向 `/classroom?error=invite-expired`，列表页渲染对应红色横幅。
+- [x] UI：`InviteCodeCard` 显示有效期（`有效期至 xxxx/x/x` / 过期红字提示「同学无法通过它加入」）；过期且为班长时提供「重新生成邀请码」按钮（首点确认态，提示旧码立即失效），非创建者不渲染；`LeaveClassroomButton`（班级空间页底部，非创建者可见，二次确认 + 后果提示，触摸目标 ≥44px）。
+- [x] `leaveClassroomAction(classroomId)`：`requireMembership` → 创建者返回可读错误「创建者暂不可退出」（MVP 不做转让/解散）→ 删除 `ClassroomMember`；**TaskCompletion 历史保留不清理**（任务完成记录是班级共享数据，个人退出不影响历史统计——二选一取保留）；退出后跳 `/classroom` 列表页。
+- [x] 端到端验证（`next start` + HTTP 直调 Server Action，测试行已清理）：过期邀请码加入被拒（重定向 invite-expired 横幅渲染 ✓）、非创建者重新生成被拒、班长重新生成后新码 7 天有效且可用其加入 ✓、创建者退出被拒、普通成员退出后班级页 403 且其 TaskCompletion 保留 ✓；`npm test` 93/93、lint 0 error、build 通过。
+- [x] AGENTS.md §7 待办「邀请码无过期/退出班级」移除，§3/§6 同步班级模块职责与能力概览。
+
 ## 2026-09-13（部署自用包）
 
 - [x] 周报生成逻辑抽为 `src/modules/companion/weekly-report.ts` 的 `generateWeeklyReport(goalId)`（route 薄壳化，行为不变）。

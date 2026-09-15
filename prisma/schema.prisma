@@ -34,12 +34,14 @@ enum ClassTaskType {
 }
 
 model Classroom {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   name       String
-  inviteCode String   @unique
+  inviteCode String    @unique
   creatorId  String
   metadata   Json?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
+  // 邀请码有效期，null 表示永久有效（迁移前存量数据）；新建默认 7 天（见 modules/classroom/invite.ts）
+  inviteExpireAt DateTime?
 
   members ClassroomMember[]
   tasks   ClassTask[]

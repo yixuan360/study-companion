@@ -10,6 +10,10 @@ import {
   SESSION_MAX_AGE_SECONDS,
 } from "@/lib/auth";
 import { requireMembership } from "@/modules/classroom/membership";
+import {
+  inviteExpireAtFrom,
+  isInviteExpired,
+} from "@/modules/classroom/invite";
 
 export interface FormState {
   error: string;
@@ -63,13 +67,16 @@ export async function createIdentityAction(
     path: "/",
   });
 
-  // 邀请链接流程：创建身份后自动加入班级
+  // 邀请链接流程：创建身份后自动加入班级（过期邀请码不入班，带错误提示回列表页）
   const code = String(formData.get("code") ?? "").trim().toUpperCase();
   if (code) {
     const classroom = await prisma.classroom.findUnique({
       where: { inviteCode: code },
     });
     if (classroom) {
+      if (isInviteExpired(classroom.inviteExpireAt, new Date())) {
+        redirect("/classroom?error=invite-expired");
+      }
       await prisma.classroomMember.upsert({
         where: {
           classroomId_userId: { classroomId: classroom.id, userId: user.id },
@@ -110,6 +117,7 @@ export async function createClassroomAction(
           name,
           inviteCode: generateInviteCode(),
           creatorId: user.id,
+          inviteExpireAt: inviteExpireAtFrom(new Date()),
           members: {
             create: { userId: user.id },
           },
@@ -157,6 +165,9 @@ export async function joinClassroomAction(
   if (!classroom) {
     return { error: "邀请码无效，请核对后重试" };
   }
+  if (isInviteExpired(classroom.inviteExpireAt, new Date())) {
+    return { error: "邀请码已过期，请联系班长重新生成" };
+  }
 
   await prisma.classroomMember.upsert({
     where: { classroomId_userId: { classroomId: classroom.id, userId: user.id } },
@@ -180,6 +191,9 @@ export async function joinByInviteCodeAction(code: string): Promise<void> {
   });
   if (!classroom) {
     redirect("/classroom?error=invalid-code");
+  }
+  if (isInviteExpired(classroom.inviteExpireAt, new Date())) {
+    redirect("/classroom?error=invite-expired");
   }
 
   await prisma.classroomMember.upsert({
@@ -276,5 +290,84 @@ export async function deleteClassTaskAction(
   await prisma.classTask.delete({ where: { id: task.id } });
 
   revalidatePath(`/classroom/${classroomId}`);
+  return { error: "" };
+}
+
+/** 重新生成邀请码：新 code + 新有效期（INVITE_EXPIRE_DAYS 天），仅班级创建者可操作。 */
+export async function regenerateInviteCodeAction(
+  classroomId: string
+): Promise<{ error: string }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/classroom/identity");
+  }
+
+  await requireMembership(classroomId, user.id);
+
+  const classroom = await prisma.classroom.findFirst({
+    where: { id: classroomId },
+    select: { creatorId: true },
+  });
+  if (!classroom) {
+    return { error: "班级不存在" };
+  }
+  if (classroom.creatorId !== user.id) {
+    return { error: "只有班长可以重新生成邀请码" };
+  }
+
+  const inviteExpireAt = inviteExpireAtFrom(new Date());
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await prisma.classroom.update({
+        where: { id: classroomId },
+        data: { inviteCode: generateInviteCode(), inviteExpireAt },
+      });
+      break;
+    } catch (err) {
+      // 邀请码唯一索引冲突则换码重试，其余错误直接抛出
+      if (
+        attempt === 2 ||
+        !(err instanceof Error && err.message.includes("inviteCode"))
+      ) {
+        throw err;
+      }
+    }
+  }
+
+  revalidatePath(`/classroom/${classroomId}`);
+  return { error: "" };
+}
+
+/**
+ * 退出班级：删除 ClassroomMember 记录；TaskCompletion 历史保留不清理
+ * （任务完成记录是班级共享数据，个人退出不影响历史统计）。
+ * 创建者不可退出（MVP 不做转让/解散）。
+ */
+export async function leaveClassroomAction(
+  classroomId: string
+): Promise<{ error: string }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/classroom/identity");
+  }
+
+  await requireMembership(classroomId, user.id);
+
+  const classroom = await prisma.classroom.findFirst({
+    where: { id: classroomId },
+    select: { creatorId: true },
+  });
+  if (!classroom) {
+    return { error: "班级不存在" };
+  }
+  if (classroom.creatorId === user.id) {
+    return { error: "创建者暂不可退出" };
+  }
+
+  await prisma.classroomMember.delete({
+    where: { classroomId_userId: { classroomId, userId: user.id } },
+  });
+
+  revalidatePath("/classroom");
   return { error: "" };
 }

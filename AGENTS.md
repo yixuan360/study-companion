@@ -55,7 +55,7 @@ study-companion/
 
 - `recite`：艾宾浩斯调度 `scheduler.ts`（纯函数+测试）、今日查询 `today.ts`（materialId/新卡上限）、统计 `stats.ts`、推送 `reminder.ts`、actions.ts。
 - `companion`：`plan.ts`（parsePlan 校验/日期纯函数）、`stats.ts`（周一为起点周统计/连续打卡，日期纯函数重导出）、`goal-detail.ts`（目标详情页展示组装，纯函数）、`weekly.ts`（周报输出校验）、`memory.ts`（记忆包）、`actions.ts`（目标归档/恢复/删除）。
-- `classroom`：`actions.ts`（身份/建班/加入/SendKey）、`membership.ts`（数据隔离唯一入口）、`tasks.ts`（校验归一化）、`reminder.ts`（早晚推送）。
+- `classroom`：`actions.ts`（身份/建班/加入/SendKey/任务删除/邀请码重新生成/退出班级）、`membership.ts`（数据隔离唯一入口）、`invite.ts`（邀请码有效期常量+过期判断纯函数）、`tasks.ts`（校验归一化）、`reminder.ts`（早晚推送）。
 - `graph`：`extract.ts`（Prompt + parseExtraction + normalizeRelation 归一）、`candidates.ts`（相似度候选召回：embedding 优先/n-gram 兜底，纯函数）、`adjudicate.ts`（批量裁决 Prompt + parseBatchVerdicts，纯函数）、`ingest.ts`（三段式对齐 + ingestGraph）、`actions.ts`（来源删除/冲突裁决）。
 
 ## 4. 关键机制（改动前必须读）
@@ -95,7 +95,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 
 - **背诵**：AI 制卡（预览确认入库）→ 艾宾浩斯复习流（两档自评、每日新卡上限可调、原文折叠、按材料复习）→ 统计（累计/连续天数）→ 定时/手动推送提醒。
 - **陪伴**：建目标（AI 差距评估+阶段计划）→ 预览期对话式调整（多轮+撤销）→ 今日打卡 → AI 周报+下周计划（可 AI 调整再入库）→ 执行中手动编辑/改期/增删任务 → 目标详情页 → 归档（首页折叠区可恢复）/删除。
-- **班级**：轻量身份 → 建班/邀请链接 → AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 任务编辑/删除（仅录入人或班长可删，二次确认）→ 早晚推送 → SendKey 绑定。
+- **班级**：轻量身份 → 建班/邀请链接（7 天有效，过期仅班长可重新生成，退出班级入口在班级空间页）→ AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 任务编辑/删除（仅录入人或班长可删，二次确认）→ 早晚推送 → SendKey 绑定。
 - **图谱**：喂入（AI 抽取→预览→三段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 冲突审阅队列 → 来源管理 → 成长视图 → 关系归一。
 - **基础设施**：AI 网关（module 标注+用量日志）、推送网关、AI 用量面板 `/dev/ai-usage`（含费用估算，`src/lib/ai/pricing.ts` 价格表需手工维护）、调试页 `/dev/*`、本地自用部署（start:local + 调度器 + 每日备份）、最小 PWA、打卡乐观更新。
 
@@ -125,7 +125,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 - 首页角标多目标未拆分。
 - **执行中修改阶段结构未做**（改周数连锁后续阶段日期与任务归属，易出脏数据）；预览撤销只回退 AI 调整栈（手动编辑清空），历史存 sessionStorage。
 
-**班级**：截图提取未实现；单设备单 token 无找回；邀请码无过期/退出班级；Server 酱免费版 5 条/分钟。
+**班级**：截图提取未实现；单设备单 token 无找回；Server 酱免费版 5 条/分钟。
 
 **图谱**
 

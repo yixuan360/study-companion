@@ -54,6 +54,12 @@ export default async function ClassroomPage({
           </div>
         )}
 
+        {error === "invite-expired" && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+            邀请码已过期，请联系班长重新生成
+          </div>
+        )}
+
         {memberships.length === 0 ? (
           <div className="mb-6 rounded-2xl border border-dashed border-zinc-300 bg-white p-6 text-center dark:border-zinc-700 dark:bg-zinc-900">
             <div className="mb-2 text-4xl">📭</div>

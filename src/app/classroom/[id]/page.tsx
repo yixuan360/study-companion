@@ -2,8 +2,10 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { requireMembership } from "@/modules/classroom/membership";
+import { isInviteExpired } from "@/modules/classroom/invite";
 import { BackLink } from "@/app/_components/BackLink";
 import { InviteCodeCard } from "./InviteCodeCard";
+import { LeaveClassroomButton } from "./LeaveClassroomButton";
 import { TaskSection, type TaskItem } from "./TaskSection";
 
 export default async function ClassroomSpacePage({
@@ -47,6 +49,12 @@ export default async function ClassroomSpacePage({
     completions.filter((c) => c.done).map((c) => c.taskId)
   );
 
+  // 邀请码有效期（null 为存量数据，永久有效）
+  const inviteExpired = isInviteExpired(classroom.inviteExpireAt, new Date());
+  const expireLabel = classroom.inviteExpireAt
+    ? `${classroom.inviteExpireAt.getFullYear()}/${classroom.inviteExpireAt.getMonth() + 1}/${classroom.inviteExpireAt.getDate()}`
+    : "永久有效";
+
   const taskItems: TaskItem[] = tasks.map((t) => ({
     id: t.id,
     title: t.title,
@@ -78,8 +86,12 @@ export default async function ClassroomSpacePage({
 
         <div className="mb-6">
           <InviteCodeCard
+            classroomId={classroom.id}
             classroomName={classroom.name}
             inviteCode={classroom.inviteCode}
+            expireLabel={expireLabel}
+            isExpired={inviteExpired}
+            isCreator={classroom.creatorId === user.id}
           />
         </div>
 
@@ -131,6 +143,12 @@ export default async function ClassroomSpacePage({
             </ul>
           </div>
         </section>
+
+        {classroom.creatorId !== user.id && (
+          <section className="mb-24 sm:mb-6">
+            <LeaveClassroomButton classroomId={classroom.id} />
+          </section>
+        )}
       </div>
     </main>
   );
