@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { BackLink } from "@/app/_components/BackLink";
 import { GraphTabs } from "../_components/GraphTabs";
 import { ReviewList } from "./ReviewList";
+import { AlignReviewList, type AlignReviewItem } from "./AlignReviewList";
 
 function formatDate(d: Date): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
@@ -17,8 +18,22 @@ interface ConflictPayload {
   incomingExcerpt?: string;
 }
 
+interface AlignPayload {
+  sourceId?: string;
+  sourceTitle?: string;
+  entityName?: string;
+  entitySummary?: string;
+  entityAliases?: string[];
+  suggestedName?: string;
+  aiReason?: string;
+}
+
 export default async function GraphReviewPage() {
-  const [pending, resolvedCount] = await Promise.all([
+  const [alignPending, conflictPending, resolvedCount] = await Promise.all([
+    prisma.mergeReview.findMany({
+      where: { status: "pending", type: "align" },
+      orderBy: { createdAt: "desc" },
+    }),
     prisma.mergeReview.findMany({
       where: { status: "pending", type: "conflict" },
       orderBy: { createdAt: "desc" },
@@ -26,7 +41,22 @@ export default async function GraphReviewPage() {
     prisma.mergeReview.count({ where: { status: { not: "pending" } } }),
   ]);
 
-  const items = pending.map((r) => {
+  const alignItems: AlignReviewItem[] = alignPending.map((r) => {
+    const p = (r.payload ?? {}) as AlignPayload;
+    return {
+      id: r.id,
+      createdAtLabel: formatDate(r.createdAt),
+      entityName: p.entityName ?? "？",
+      entitySummary: p.entitySummary ?? "",
+      entityAliases: p.entityAliases ?? [],
+      suggestedName: p.suggestedName ?? "？",
+      aiReason: p.aiReason ?? "",
+      sourceTitle: p.sourceTitle ?? "",
+      sourceId: p.sourceId ?? "",
+    };
+  });
+
+  const conflictItems = conflictPending.map((r) => {
     const p = (r.payload ?? {}) as ConflictPayload;
     return {
       id: r.id,
@@ -53,19 +83,37 @@ export default async function GraphReviewPage() {
           变更审阅
         </h1>
         <p className="mb-6 text-sm text-zinc-500 dark:text-zinc-400">
-          待处理 {items.length} 条 · 已处理 {resolvedCount} 条。
-          冲突指同一对知识点出现了语义相反的关系（如「导致」vs「抑制」）
+          待处理 {alignItems.length + conflictItems.length} 条（合并存疑{" "}
+          {alignItems.length} · 关系冲突 {conflictItems.length}）· 已处理{" "}
+          {resolvedCount} 条
         </p>
 
-        {items.length === 0 ? (
+        {alignItems.length === 0 && conflictItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-900">
             <div className="mb-2 text-4xl">✅</div>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              没有待处理的冲突，图谱合并一切正常
+              没有待处理的审阅，图谱合并一切正常
             </p>
           </div>
         ) : (
-          <ReviewList items={items} />
+          <div className="space-y-8">
+            {alignItems.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                  🤔 合并存疑（AI 不确定或人机分歧，需人工确认）
+                </h2>
+                <AlignReviewList items={alignItems} />
+              </section>
+            )}
+            {conflictItems.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                  ⚡ 关系冲突（同一对知识点出现语义相反的关系）
+                </h2>
+                <ReviewList items={conflictItems} />
+              </section>
+            )}
+          </div>
         )}
       </div>
     </main>

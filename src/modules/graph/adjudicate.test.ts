@@ -3,7 +3,10 @@ import {
   ADJUDICATION_BATCH_SIZE,
   buildBatchPrompt,
   chunkItems,
+  isUncertainAlignmentReason,
   parseBatchVerdicts,
+  resolveAlignSuggestion,
+  shouldFlagAlignReview,
   type AdjudicationItem,
 } from "./adjudicate";
 
@@ -45,6 +48,9 @@ describe("buildBatchPrompt", () => {
     expect(prompt).toContain("上下位概念");
     expect(prompt).toContain("参数与权重应区分");
     expect(prompt).toContain("禁止跨项选择");
+    // 不确定信号引导（align 审阅的信号源）
+    expect(prompt).toContain("不确定");
+    expect(prompt).toContain("match: null");
   });
 });
 
@@ -132,5 +138,75 @@ describe("parseBatchVerdicts", () => {
       ITEMS
     );
     expect(verdicts[0]).toEqual({ status: "ok", matchedId: "c2", reason: "" });
+  });
+});
+
+describe("align 审阅触发判定（克制宁可少报）", () => {
+  const entity = { name: "权重", aliases: ["weight"] };
+  const candidates = [
+    { id: "c1", name: "权重", aliases: ["weight"] },
+    { id: "c2", name: "参数", aliases: [] },
+  ];
+
+  it("isUncertainAlignmentReason：命中不确定信号， confident 拒绝不报", () => {
+    expect(isUncertainAlignmentReason("两者不确定是否同一概念")).toBe(true);
+    expect(isUncertainAlignmentReason("难以判断，疑似同一概念")).toBe(true);
+    expect(isUncertainAlignmentReason("存在分歧，无法确定")).toBe(true);
+    expect(
+      isUncertainAlignmentReason("学习率衰减是调整学习率的策略，而非学习率本身")
+    ).toBe(false);
+    expect(isUncertainAlignmentReason("参数是可训练变量的统称，权重仅是其一种")).toBe(
+      false
+    );
+  });
+
+  it("resolveAlignSuggestion：name 精确命中优先并标 exact，否则取首个", () => {
+    expect(resolveAlignSuggestion(entity, candidates)).toEqual({
+      id: "c1",
+      exact: true,
+    });
+    // 别名精确命中也算 exact
+    expect(
+      resolveAlignSuggestion({ name: "Weight", aliases: [] }, candidates)
+    ).toEqual({ id: "c1", exact: true });
+    // 无精确命中 → 首个候选，非 exact
+    expect(
+      resolveAlignSuggestion({ name: "权重初始化", aliases: [] }, candidates)
+    ).toEqual({ id: "c1", exact: false });
+    expect(resolveAlignSuggestion(entity, [])).toBeNull();
+  });
+
+  it("shouldFlagAlignReview：已合并不报；精确命中+AI 拒绝必报", () => {
+    expect(
+      shouldFlagAlignReview({
+        matchedId: "c1",
+        reason: "r",
+        suggestedExact: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldFlagAlignReview({
+        matchedId: null,
+        reason: "同名但摘要不同，属于不同概念",
+        suggestedExact: true,
+      })
+    ).toBe(true);
+  });
+
+  it("shouldFlagAlignReview：AI 自陈不确定才报，confident 拒绝不报", () => {
+    expect(
+      shouldFlagAlignReview({
+        matchedId: null,
+        reason: "两者可能是同一概念，但不确定",
+        suggestedExact: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldFlagAlignReview({
+        matchedId: null,
+        reason: "上下位概念，不算同一概念",
+        suggestedExact: false,
+      })
+    ).toBe(false);
   });
 });

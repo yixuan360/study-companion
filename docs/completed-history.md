@@ -2,6 +2,15 @@
 
 > 2026-09-07 起 AGENTS.md 只保留「当前能力概览」，详细完成记录统一追加到本文件（替代原「只增不减」写在 AGENTS.md 里的做法）。
 
+## 2026-09-15（4C 冲刺 T10：图谱 pendingCleanup 清理页 + align 审阅启用）
+
+- [x] **pendingCleanup 清理页** `/graph/cleanup`：挂入 GraphTabs（桌面顶部 + 移动端底部，🧹 清理）。标记存储形式确认为 `metadata.pendingCleanup: true` + 本次新增 `pendingCleanupAt`（ISO 时间，`deleteSourceAction` 归零时写入）。页面 `force-dynamic`（管理页数据随时变，避免构建期静态快照）；`mentionCount=0` 库内收窄 + 内存过滤。`deleteCleanupNodeAction` 事务内二次校验标记后删除（GraphEdge/NodeSource 外键 `onDelete: Cascade` 自动级联，验收实测 0 孤儿边）；`restoreCleanupNodeAction` 撤销标记 + mentionCount 重置 1（UI 文案明示）。
+- [x] **align 类型 MergeReview 启用**（原 schema 枚举闲置项）：判定纯函数在 `adjudicate.ts`（克制宁可少报）——AI 已合并不报；**规则精确命中（name/别名）但 AI 拒绝 = 人机分歧必报**；AI reason 含不确定信号（不确定/无法确定/难以判断/存疑/疑似同一/可能是同一/分歧）才报；confident 拒绝（上下位/参数≠权重等）不报。批量 Prompt 新增第 5 条引导 AI 对证据不足的项返回 match:null + reason 带不确定词。`resolveAlignSuggestion` 提名建议并入节点（精确命中优先，否则候选首个），payload 带 newNodeId/entity 快照/aiReason/来源，与入库同事务写入；`IngestResult` 新增 `alignReviews` 计数（additive，接口兼容）。
+- [x] **重名守卫**（e2e 暴露的真实 bug）：AI 拒绝同名候选时直接 create 会撞 `GraphNode.name @unique` 导致整篇 ingest 500 且审阅随事务回滚——现改为：已标 align 待审且同名节点存在时跳过创建（newNodeId=null），相关关系按端点缺失跳过；批准合并回退用 payload 实体快照执行复用逻辑（mentionCount+1、别名并集≤20、主名不变），拒绝=不入库。
+- [x] **人工裁决** `resolveAlignReviewAction`（approve/reject）：批准在单事务内完成——别名并合（复刻 ingest 复用逻辑）→ 新建节点出边/入边迁移（同三元组 weight 累加、自环删除）→ NodeSource upsert 迁移 → 删新建节点 → 目标 mentionCount+1；拒绝仅置 status 维持新建。审阅页 `/graph/review` 分「🤔 合并存疑 / ⚡ 关系冲突」两区（conflict 原逻辑不动）。
+- [x] 端到端验证（`next start` + HTTP/直调混合，24 项全 PASS）：同名分歧 ingest 不崩溃且产出 2 条 align 待审（参数⇒权重为真实管线产出；训练集重名走 newNodeId=null 路径）；批准路径权重 mentionCount 1→2、别名并入「参数」、优化器→参数边迁移为 优化器→权重、NodeSource 2 条、0 孤儿边；拒绝路径节点各自独立；删来源→两节点标记→清理页 HTML 列出→确认删除 0 孤儿边→恢复 mentionCount=1 标记清除。验收后 taskkill 杀净 node 进程、dev.db 还原基线。
+- [x] 单测：`adjudicate.test.ts` 新增 4 组 align 判定用例（信号词/提名/必报/克制拒绝），全量 107 用例过；lint 0 error；build 过。AGENTS.md §4/§6/§7 同步（划掉「align 未使用/pendingCleanup 无清理页」待办）。
+
 ## 2026-09-15（4C 冲刺 T5：陪伴目标详情页）
 
 - [x] 纯函数模块 `src/modules/companion/goal-detail.ts`：`buildGoalDetail`/`buildPhaseRows`/`buildReportRows`/`normalizeRiskLevel` + 风险等级样式表 `RISK_LEVEL_STYLES`（与 plan 页共用，PlanClient 删本地重复定义）；页面层只查库，展示组装全部可测（8 单测）。

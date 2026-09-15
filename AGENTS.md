@@ -75,7 +75,7 @@ study-companion/
 
 ### 图谱三段式实体对齐（不退化的核心）
 
-a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存匹配，O(N) 一趟）→ b 段相似度召回（`candidates.ts`：配了 OpenAI 兼容 embedding 接口则向量余弦 top-K，向量存 `GraphNode.metadata` 惰性回填；否则字符 n-gram 余弦兜底，中文按字 bigram、英文整词+词内 bigram，阈值 0.25/top-K 15）→ 两段结果**取并集**进 c 段 AI 裁决（`adjudicate.ts`：有候选实体按 `ADJUDICATION_BATCH_SIZE=8` 分批，一次 chat 裁多项返回 JSON 数组；缺项/非法项与整批失败均逐条兜底保守建新；批不跨篇——每次 ingest 是独立请求）。红线：上下位概念不算同一概念，参数≠权重，策略≠作用对象，不确定返回 null，失败保守建新。匹配成功复用（mentionCount+1、别名并集≤20、主名不变）；关系 `@@unique(from,to,relation)` 已存在则 weight+1；端点不在实体表的关系被过滤（禁止脑补）。语义相反关系（OPPOSITE_RELATIONS）只记录 `MergeReview` 不阻塞，人工三选一裁决。溯源 `NodeSource`；删来源保守处理（mentionCount-1，归零标 `pendingCleanup`）。对比报告见 `docs/graph-alignment-benchmark.md`。
+a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存匹配，O(N) 一趟）→ b 段相似度召回（`candidates.ts`：配了 OpenAI 兼容 embedding 接口则向量余弦 top-K，向量存 `GraphNode.metadata` 惰性回填；否则字符 n-gram 余弦兜底，中文按字 bigram、英文整词+词内 bigram，阈值 0.25/top-K 15）→ 两段结果**取并集**进 c 段 AI 裁决（`adjudicate.ts`：有候选实体按 `ADJUDICATION_BATCH_SIZE=8` 分批，一次 chat 裁多项返回 JSON 数组；缺项/非法项与整批失败均逐条兜底保守建新；批不跨篇——每次 ingest 是独立请求）。红线：上下位概念不算同一概念，参数≠权重，策略≠作用对象，不确定返回 null，失败保守建新。匹配成功复用（mentionCount+1、别名并集≤20、主名不变）；关系 `@@unique(from,to,relation)` 已存在则 weight+1；端点不在实体表的关系被过滤（禁止脑补）。语义相反关系（OPPOSITE_RELATIONS）只记录 `MergeReview` 不阻塞，人工三选一裁决。溯源 `NodeSource`；删来源保守处理（mentionCount-1，归零标 `pendingCleanup: true` + `pendingCleanupAt`，清理页 `/graph/cleanup` 可确认删除（级联边/溯源）或恢复（提及重置 1））。AI 拒绝但值得人工复核的实体（规则精确命中分歧或 reason 含不确定信号，克制宁可少报）写 `align` 类型 MergeReview，审阅页人工裁决：批准=并入建议节点（mentionCount+1/别名并集/边与溯源迁移），重名冲突时跳过创建等人工定夺。对比报告见 `docs/graph-alignment-benchmark.md`。
 
 ### 图谱关系归一（防边碎片化）
 
@@ -96,7 +96,7 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 - **背诵**：AI 制卡（预览确认入库）→ 艾宾浩斯复习流（两档自评、每日新卡上限可调、原文折叠、按材料复习）→ 统计（累计/连续天数）→ 定时/手动推送提醒。
 - **陪伴**：建目标（AI 差距评估+阶段计划）→ 预览期对话式调整（多轮+撤销）→ 今日打卡 → AI 周报+下周计划（可 AI 调整再入库）→ 执行中手动编辑/改期/增删任务 → 执行中调整阶段结构（详情页改周数→变更计划预览确认→事务落库）→ 目标详情页 → 归档（首页折叠区可恢复）/删除。
 - **班级**：轻量身份 → 建班/邀请链接（7 天有效，过期仅班长可重新生成，退出班级入口在班级空间页）→ AI 提取通知任务（预览确认发布）→ 任务流（三色预警、个人完成态）→ 任务编辑/删除（仅录入人或班长可删，二次确认）→ 早晚推送 → SendKey 绑定。
-- **图谱**：喂入（AI 抽取→预览→三段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 冲突审阅队列 → 来源管理 → 成长视图 → 关系归一。
+- **图谱**：喂入（AI 抽取→预览→三段式对齐入库）→ 力导向图（搜索/筛选/节点抽屉/溯源）→ 审阅队列（合并存疑 align + 关系冲突 conflict，人工裁决）→ 来源管理 → 待清理节点（删来源归零标记，可删/恢复）→ 成长视图 → 关系归一。
 - **基础设施**：AI 网关（module 标注+用量日志）、推送网关、AI 用量面板 `/dev/ai-usage`（含费用估算，`src/lib/ai/pricing.ts` 价格表需手工维护）、调试页 `/dev/*`、本地自用部署（start:local + 调度器 + 每日备份）、最小 PWA、打卡乐观更新。
 
 ## 7. 待办与已知坑
@@ -129,9 +129,8 @@ a 段规则候选（name 精确/aliases 包含/name 双向包含，全量内存�
 
 **图谱**
 
-- 实体对齐全量内存匹配，节点破千须改候选检索；AI 裁决逐实体调用，量大可改批量。
-- `align` 类型 MergeReview 未使用；`pendingCleanup` 节点仅标记无清理页。
-- 退化点①**领域标签碎片化**未解决（domain 走对齐或 Prompt 限定枚举）；对齐 Prompt 可加「参数与权重应区分」（压测错合 1 例）。
+- 候选召回（candidates.ts）与裁决批量化（adjudicate.ts，批大小 8）已落地，见 docs/graph-alignment-benchmark.md；embedding 召回需配 `EMBEDDING_*` 才启用（默认 n-gram 兜底）。
+- 退化点①**领域标签碎片化**已解决（T2 词表+同义映射）；对齐 Prompt 已加「参数与权重应区分」（T3，压测错合 1 例清零）。
 
 ## 8. 协作规则
 

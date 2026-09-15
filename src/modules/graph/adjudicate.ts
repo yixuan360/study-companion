@@ -62,6 +62,7 @@ ${blocks}
 2. 参数与权重应区分为不同概念：参数是可训练变量的统称，权重只是参数的一种。
 3. 策略与其作用对象、现象与其缓解手段、统称与具体实例都不算同一概念（如"学习率衰减"≠"学习率"）；宁可新建也不要错合。
 4. 逐项独立判断，只允许从该项自己的候选列表中选择 id，禁止跨项选择。
+5. 如果你认为某知识点与候选节点可能是同一概念但证据不足、难以二选一，仍然返回 match: null，并在 reason 里用"不确定/难以判断/存疑"等词说明。
 输出严格 JSON 数组，共 ${items.length} 项，每项形如 {"index": ${first}, "match": 节点id 或 null, "reason": "一句话"}，index 必须与知识点编号一致，缺项视为该项裁决失败。`;
 }
 
@@ -102,4 +103,67 @@ export function parseBatchVerdicts(
     verdicts[pos] = { status: "ok", matchedId, reason };
   }
   return verdicts;
+}
+
+// ---------------- align 类型 MergeReview 的触发判定（纯函数，克制宁可少报） ----------------
+
+/** 不确定信号词：AI reason 命中任一即视为"AI 自陈不确定"（全部为小写匹配） */
+const UNCERTAIN_SIGNALS = [
+  "不确定",
+  "无法确定",
+  "难以判断",
+  "难以确定",
+  "存疑",
+  "疑似同一",
+  "可能是同一",
+  "分歧",
+];
+
+/** AI 自陈不确定（match 为 null 但 reason 含不确定信号） */
+export function isUncertainAlignmentReason(reason: string): boolean {
+  return UNCERTAIN_SIGNALS.some((s) => reason.includes(s));
+}
+
+export interface AlignSuggestableCandidate {
+  id: string;
+  name: string;
+  aliases: string[];
+}
+
+/**
+ * 为 align 审阅提名建议并入节点：name/别名精确命中的候选优先（规则强命中，
+ * 与 AI 拒绝构成分歧，最值得人工看一眼），否则取候选列表首个。
+ */
+export function resolveAlignSuggestion(
+  entity: { name: string; aliases: string[] },
+  candidates: AlignSuggestableCandidate[]
+): { id: string; exact: boolean } | null {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const nameN = norm(entity.name);
+  const aliasN = new Set(entity.aliases.map(norm));
+  for (const c of candidates) {
+    const cn = norm(c.name);
+    if (cn === nameN || aliasN.has(cn)) return { id: c.id, exact: true };
+    if (c.aliases.some((a) => norm(a) === nameN || aliasN.has(norm(a)))) {
+      return { id: c.id, exact: true };
+    }
+  }
+  return candidates.length > 0 ? { id: candidates[0].id, exact: false } : null;
+}
+
+/**
+ * 是否写入 align 审阅。克制原则（宁可少报不误报）：
+ * - AI 已合并（matchedId 非空）→ 不报；
+ * - 规则精确命中（name/别名）但 AI 拒绝 → 报（人机分歧，exact 信号）；
+ * - AI 自陈不确定（reason 含不确定信号）→ 报；
+ * - 其余 confident 拒绝（如上下位/策略≠对象）→ 不报。
+ */
+export function shouldFlagAlignReview(input: {
+  matchedId: string | null;
+  reason: string;
+  suggestedExact: boolean;
+}): boolean {
+  if (input.matchedId) return false;
+  if (input.suggestedExact) return true;
+  return isUncertainAlignmentReason(input.reason);
 }

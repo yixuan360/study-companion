@@ -13,6 +13,8 @@ import {
   buildBatchPrompt,
   chunkItems,
   parseBatchVerdicts,
+  resolveAlignSuggestion,
+  shouldFlagAlignReview,
   type AdjudicationItem,
 } from "./adjudicate";
 import type {
@@ -28,6 +30,8 @@ export interface IngestResult {
   incrementedEdges: number;
   conflicts: number;
   skippedRelations: number;
+  /** 本次写入的 align 待审条数（AI 不确定/人机分歧，供人工裁决） */
+  alignReviews: number;
   alignments: { name: string; matched: string | null; reason: string }[];
 }
 
@@ -347,9 +351,45 @@ export async function ingestGraph(input: {
     ...verdictByEntity.get(c.entity)!,
   }));
 
+  // AI 拒绝但值得人工复核的实体 → align 待审（克制：规则精确命中分歧 / AI 自陈不确定）
+  const flaggedAligns: {
+    entity: ExtractedEntity;
+    aiReason: string;
+    suggestedNodeId: string;
+    suggestedName: string;
+  }[] = [];
+  for (const c of collected) {
+    const v = verdictByEntity.get(c.entity)!;
+    if (
+      v.matchedId ||
+      v.reason === "无本地候选" ||
+      v.reason === "AI 裁决失败，保守创建新节点"
+    ) {
+      continue;
+    }
+    const suggestion = resolveAlignSuggestion(c.entity, c.candidateList);
+    if (
+      suggestion &&
+      shouldFlagAlignReview({
+        matchedId: v.matchedId,
+        reason: v.reason,
+        suggestedExact: suggestion.exact,
+      })
+    ) {
+      flaggedAligns.push({
+        entity: c.entity,
+        aiReason: v.reason,
+        suggestedNodeId: suggestion.id,
+        suggestedName:
+          c.candidateList.find((n) => n.id === suggestion.id)?.name ?? "？",
+      });
+    }
+  }
+
   const sourceId = randomUUID();
   const nodeIdByName = new Map<string, string>();
   const excerptByNodeId = new Map<string, string>();
+  const flaggedAlignNames = new Set(flaggedAligns.map((f) => normalizeName(f.entity.name)));
   let newNodes = 0;
   let reusedNodes = 0;
   let newEdges = 0;
@@ -422,6 +462,15 @@ export async function ingestGraph(input: {
         nodeId = updated.id;
         reusedNodes += 1;
       } else {
+        // align 待审且同名节点已存在（AI 拒绝同名候选，重名节点建不出）：
+        // 跳过创建，交给人工裁决——批准=并入建议节点，拒绝=不入库；相关关系按端点缺失跳过
+        if (flaggedAlignNames.has(normalizeName(entity.name))) {
+          const nameTaken = await tx.graphNode.findFirst({
+            where: { name: entity.name },
+            select: { id: true },
+          });
+          if (nameTaken) continue;
+        }
         const created = await tx.graphNode.create({
           data: {
             name: entity.name,
@@ -547,6 +596,27 @@ export async function ingestGraph(input: {
         },
       });
     }
+
+    // align 待审写入 MergeReview（人工批准合并/拒绝；newNodeId 供批准时迁移边与溯源）
+    for (const f of flaggedAligns) {
+      await tx.mergeReview.create({
+        data: {
+          type: "align",
+          status: "pending",
+          payload: {
+            sourceId,
+            sourceTitle: title,
+            newNodeId: nodeIdByName.get(normalizeName(f.entity.name)) ?? null,
+            entityName: f.entity.name,
+            entitySummary: f.entity.summary,
+            entityAliases: f.entity.aliases,
+            suggestedNodeId: f.suggestedNodeId,
+            suggestedName: f.suggestedName,
+            aiReason: f.aiReason,
+          },
+        },
+      });
+    }
   });
 
   return {
@@ -557,6 +627,7 @@ export async function ingestGraph(input: {
     incrementedEdges,
     conflicts: conflicts.length,
     skippedRelations,
+    alignReviews: flaggedAligns.length,
     alignments: alignments.map((a) => ({
       name: a.entity.name,
       matched: a.matchedId,

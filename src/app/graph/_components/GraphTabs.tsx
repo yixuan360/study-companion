@@ -8,6 +8,7 @@ const tabs = [
   { href: "/graph/import", label: "喂入", emoji: "📥" },
   { href: "/graph/sources", label: "来源", emoji: "📚" },
   { href: "/graph/growth", label: "成长", emoji: "📈" },
+  { href: "/graph/cleanup", label: "清理", emoji: "🧹" },
 ];
 
 /** 图谱模块底部 tab 导航：移动端固定底部，桌面端顶部横排 */
