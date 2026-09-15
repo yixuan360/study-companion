@@ -8,6 +8,13 @@ import {
   recallCandidates,
   type RecallableNode,
 } from "./candidates";
+import {
+  ADJUDICATION_BATCH_SIZE,
+  buildBatchPrompt,
+  chunkItems,
+  parseBatchVerdicts,
+  type AdjudicationItem,
+} from "./adjudicate";
 import type {
   ExtractedEntity,
   GraphExtraction,
@@ -74,12 +81,20 @@ interface ExistingNode extends RecallableNode {
  *    与召回层同一趟循环完成；N 破千后本层开销不变，因为不再依赖它单独产出候选）。
  * b. 相似度召回——embedding 可用走向量余弦 top-K（向量存 metadata，惰性回填），
  *    否则字符 n-gram 余弦兜底；与规则命中取并集，召回率不低于原两段式。
- * c. AI 裁决——仅对并集非空的实体调用，判定同一概念或全新概念。
+ * c. AI 裁决——有候选的实体按 ADJUDICATION_BATCH_SIZE 批量裁决（一次 chat 裁多项），
+ *    缺失/非法项逐条兜底；上下位不算同一概念，不确定返回 null，失败保守建新。
  */
-export async function alignEntity(
+
+interface CandidateBackedEntity {
+  entity: ExtractedEntity;
+  candidateList: ExistingNode[];
+}
+
+/** a+b 段：规则候选与相似度召回取并集，按 top-K 截断（约束 Prompt 大小） */
+async function collectCandidateList(
   entity: ExtractedEntity,
   existingNodes: ExistingNode[]
-): Promise<{ matchedId: string | null; reason: string }> {
+): Promise<ExistingNode[]> {
   const normName = normalizeName(entity.name);
   const aliasSet = new Set(entity.aliases.map(normalizeName));
 
@@ -99,7 +114,6 @@ export async function alignEntity(
     }
   }
 
-  // b 段：相似度召回（embedding 可用走向量，否则 n-gram 兜底），与规则命中取并集
   const embedConfig = getEmbeddingConfig();
   const recalled = await recallCandidates(
     { name: entity.name, aliases: entity.aliases },
@@ -112,13 +126,32 @@ export async function alignEntity(
     candidates.set(node.id, node);
   }
 
-  if (candidates.size === 0) {
-    return { matchedId: null, reason: "无本地候选" };
-  }
+  return [...candidates.values()].slice(0, RECALL_TOP_K);
+}
 
-  // 规则命中优先，召回补充至 top-K，约束 AI Prompt 大小
-  const candidateList = [...candidates.values()]
-    .slice(0, RECALL_TOP_K)
+function toAdjudicationItem(
+  index: number,
+  { entity, candidateList }: CandidateBackedEntity
+): AdjudicationItem {
+  return {
+    index,
+    name: entity.name,
+    aliases: entity.aliases,
+    summary: entity.summary,
+    candidates: candidateList.map((n) => ({
+      id: n.id,
+      name: n.name,
+      summary: n.summary,
+    })),
+  };
+}
+
+/** c 段单条路径（批量缺项/整批失败的兜底，也用于 alignEntity 单实体入口） */
+async function adjudicateOne(
+  entity: ExtractedEntity,
+  candidateList: ExistingNode[]
+): Promise<{ matchedId: string | null; reason: string }> {
+  const candidateText = candidateList
     .map((n) => `- ${n.id} ${n.name}（摘要：${n.summary}）`)
     .join("\n");
 
@@ -129,7 +162,7 @@ export async function alignEntity(
           role: "user",
           content: `新知识点：${entity.name}（摘要：${entity.summary}，别名：${entity.aliases.join("、") || "无"}）
 图谱中已有相似节点：
-${candidateList}
+${candidateText}
 判断新知识点与哪个已有节点是同一概念，还是全新概念。
 注意：
 1. 上下位概念（如"卷积神经网络"与"神经网络"）不算同一概念；不确定时返回 null。
@@ -146,7 +179,8 @@ ${candidateList}
     const parsed = JSON.parse(result.content) as { match?: unknown; reason?: unknown };
     const match = typeof parsed.match === "string" ? parsed.match : null;
     const reason = typeof parsed.reason === "string" ? parsed.reason : "";
-    if (match && candidates.has(match)) {
+    const candidateIds = new Set(candidateList.map((n) => n.id));
+    if (match && candidateIds.has(match)) {
       return { matchedId: match, reason };
     }
     return { matchedId: null, reason: reason || "AI 判定为全新概念" };
@@ -154,6 +188,59 @@ ${candidateList}
     console.error("[graph/ingest] alignment adjudication failed:", err);
     return { matchedId: null, reason: "AI 裁决失败，保守创建新节点" };
   }
+}
+
+/**
+ * c 段批量路径：一批实体一次 chat()。解析后逐项校验：
+ * ok 项直接采用；invalid 项（缺失/非法）逐条兜底重裁；整批失败全部逐条兜底。
+ */
+async function adjudicateBatch(
+  items: CandidateBackedEntity[]
+): Promise<{ matchedId: string | null; reason: string }[]> {
+  const promptItems = items.map((it, i) => toAdjudicationItem(i + 1, it));
+  try {
+    const result = await chat({
+      messages: [{ role: "user", content: buildBatchPrompt(promptItems) }],
+      taskType: "simple",
+      module: "实体对齐",
+      responseFormat: "json",
+    });
+    const verdicts = parseBatchVerdicts(JSON.parse(result.content), promptItems);
+    return await Promise.all(
+      verdicts.map((v, i) => {
+        if (v.status === "ok") {
+          return {
+            matchedId: v.matchedId,
+            reason: v.matchedId ? v.reason : v.reason || "AI 判定为全新概念",
+          };
+        }
+        console.warn(
+          `[graph/ingest] 批量裁决第 ${promptItems[i].index} 项（${items[i].entity.name}）缺失/非法，逐条兜底`
+        );
+        return adjudicateOne(items[i].entity, items[i].candidateList);
+      })
+    );
+  } catch (err) {
+    console.error(
+      "[graph/ingest] batch adjudication failed, fallback to per-entity:",
+      err
+    );
+    return Promise.all(
+      items.map(({ entity, candidateList }) => adjudicateOne(entity, candidateList))
+    );
+  }
+}
+
+/** 单实体对齐入口（保留原接口；批量流程的逐条兜底也复用其中逻辑） */
+export async function alignEntity(
+  entity: ExtractedEntity,
+  existingNodes: ExistingNode[]
+): Promise<{ matchedId: string | null; reason: string }> {
+  const candidateList = await collectCandidateList(entity, existingNodes);
+  if (candidateList.length === 0) {
+    return { matchedId: null, reason: "无本地候选" };
+  }
+  return adjudicateOne(entity, candidateList);
 }
 
 export async function ingestGraph(input: {
@@ -228,13 +315,37 @@ export async function ingestGraph(input: {
     }
   }
 
-  // c 段：AI 裁决（仅并集候选非空的实体需要，相互独立并行执行）
-  const alignments = await Promise.all(
+  // c 段：AI 裁决。先并行收集并集候选；无候选的实体直接判"无本地候选"，
+  // 有候选的按批批量裁决（一次 chat 裁多项，缺项/整批失败逐条兜底），保持原顺序
+  const collected: CandidateBackedEntity[] = await Promise.all(
     batchEntities.map(async (entity) => ({
       entity,
-      ...(await alignEntity(entity, existingNodes)),
+      candidateList: await collectCandidateList(entity, existingNodes),
     }))
   );
+  const toAdjudicate = collected.filter((c) => c.candidateList.length > 0);
+  const batches = chunkItems(toAdjudicate, ADJUDICATION_BATCH_SIZE);
+  const batchResults = await Promise.all(
+    batches.map((batch) => adjudicateBatch(batch))
+  );
+  const verdictByEntity = new Map<
+    ExtractedEntity,
+    { matchedId: string | null; reason: string }
+  >();
+  for (const c of collected) {
+    if (c.candidateList.length === 0) {
+      verdictByEntity.set(c.entity, { matchedId: null, reason: "无本地候选" });
+    }
+  }
+  batches.forEach((batch, i) => {
+    batch.forEach((item, j) => {
+      verdictByEntity.set(item.entity, batchResults[i][j]);
+    });
+  });
+  const alignments = collected.map((c) => ({
+    entity: c.entity,
+    ...verdictByEntity.get(c.entity)!,
+  }));
 
   const sourceId = randomUUID();
   const nodeIdByName = new Map<string, string>();

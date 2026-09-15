@@ -1,8 +1,8 @@
-# 图谱实体对齐基准：两段式 vs 三段式（候选召回）
+# 图谱实体对齐基准：两段式 vs 三段式（候选召回 + 批量裁决）
 
-> 日期：2026-09-15 · 任务：T3（embedding/相似度候选召回）· 数据：`scripts/graph-stress-results.baseline.json`（基线存档）、`scripts/graph-stress-results.json`（全量复跑）、`scripts/graph-stress-replay-results.json`（受控重放）
+> 日期：2026-09-15 · 任务：T3（embedding/相似度候选召回）+ T4（AI 裁决批量化）· 数据：`scripts/graph-stress-results.baseline.json`（基线存档）、`scripts/graph-stress-results.json`（T3 全量复跑）、`scripts/graph-stress-replay-results.json`（T3 受控重放）、`scripts/graph-stress-replay-t4-results.json`（T4 受控重放）
 >
-> 结论一句话：**同输入下对齐准确率持平且错合清零（1→0），召回率红线达成；AI 裁决调用次数因并集语义由 12 升至 25（固有代价，可被 T4 批量化摊薄）；候选集被 top-K 截断后与库规模解耦，千节点 n-gram 召回毫秒级。**
+> 结论一句话：**同输入下对齐准确率持平且错合清零（1→0），召回率红线达成；T4 批量化把裁决 chat 调用从 25 次降到 13 次（−48%）、裁决耗时 33.7s→11.9s（−65%），对齐结果与 T3 逐字节一致（同 92 节点/80 边，0 错合）。**
 
 ## 1. 方法
 
@@ -48,21 +48,39 @@
 
 全量复跑中召回通道直接兑现了价值：第 6 篇 LSTM→长短期记忆网络、第 9 篇 CNN→卷积神经网络均经相似度召回进入裁决并正确合并（该轮抽取未给这些实体挂别名，旧规则候选抓不到）。
 
-## 3. 开销与可扩展性
+## 3. T4：AI 裁决批量化（同输入受控重放 A/B）
+
+T4 把 c 段逐实体一次 chat 改为**批量裁决**（`src/modules/graph/adjudicate.ts`）：有候选实体按 `ADJUDICATION_BATCH_SIZE=8` 分批，一次 chat 裁多项（Prompt 要求返回 JSON 数组、逐项给 match/null）；`parseBatchVerdicts` 纯函数校验（index 回定位 + match 必须在该项候选内），缺项/非法项**逐条兜底重裁**，整批失败全部逐条兜底——保守建新语义不受影响。批不跨篇（每次 ingest 是独立请求，接口与入库时机不变）。
+
+| 指标（同输入 101 实体） | T3 逐条裁决 | T4 批量裁决 |
+|---|---|---|
+| chat 调用次数 | 25 | **13**（11 批 + 2 兜底，均 919ms，0 失败） |
+| 裁决总耗时（ApiLog） | 33.7s | **11.9s（−65%）** |
+| ingest 端到端 | 21.4s（篇均 1.3s） | **16.0s（篇均 1.0s，−25%）** |
+| 有效期望复用命中 | 5/7（71%） | 5/7（71%）持平 |
+| 疑似错合 | 0 | 0 持平 |
+| 最终图规模 | 92 节点 / 80 边 | 92 节点 / 80 边（逐节点一致） |
+
+- 25 个有候选实体分布在 11 篇文章中（每篇 1-6 项，均 < 批大小 8），故理论批数 = 11；实测 11 批 + 2 次缺项兜底（LSTM、萃取不足两项 AI 返回缺字段）= 13 次调用，与预期吻合。
+- 兜底两次的裁决结果与 T3 一致（LSTM→长短期记忆网络正确合并、萃取不足正确新建），未见批量解析错误传染同批其他项。
+- 说明：若按 `ceil(25/8)≈4` 的口径，需要跨请求攒批，违背"每次喂入即时入库"的接口约束；在当前约束下 13 次已是最优（每篇有候选各 1 批）。
+
+## 4. 开销与可扩展性
 
 - **n-gram 兜底召回**：纯函数 O(N·d)（N=节点数，d=词袋大小）。单测实测 1200 节点 × 20 查询 72ms，单篇 15 实体召回 <10ms——千节点规模对齐不会因候选检索超时（替代原"节点破千须改候选检索"的隐患）。
 - **候选集有界**：规则 ∪ 召回后按 top-K=15 截断进 AI Prompt，Prompt 大小与库规模解耦（原方案随库增长线性膨胀）。
-- **裁决延迟**：deepseek-flash 单次裁决均耗 0.9-1.3s；调用并发执行（篇内 Promise.all），对篇均 9.1s 的端到端影响有限（抽取占 85%）。
-- **调用次数取舍**：任务书"AI 裁决调用次数明显下降"与"并集、召回率不低于现状"在**同输入**下互斥（并集只增不减），实测 12→25 是并集红线的固有代价。补偿路径：T4 批量化把 N 次调用摊成 ceil(N/批大小)，25 次 ≈ 4 批（批大小 8）。
+- **裁决延迟**：deepseek-flash 单次裁决均耗 0.9-1.3s；调用并发执行（篇内 Promise.all），对篇均 9.1s 的端到端影响有限（抽取占 85%）。T4 批量化后单次裁决稍慢（批量 Prompt 更大）但调用次数 −48%，裁决总耗时 −65%。
+- **调用次数取舍**：任务书"AI 裁决调用次数明显下降"与"并集、召回率不低于现状"在**同输入**下互斥（并集只增不减），T3 实测 12→25 是并集红线的固有代价；T4 批量化在"每次喂入即时入库"的接口约束内把 25 次逐条调用压到 13 次（11 批 + 2 兜底）。
 
-## 4. 结论
+## 5. 结论
 
-1. **对齐质量**：同输入准确率持平（5/7，未命中均为抽取漏实体的已知问题）、错合 1→0；全量复跑期望命中 5/7→6/7。
+1. **对齐质量**：同输入准确率持平（5/7，未命中均为抽取漏实体的已知问题）、错合 1→0；全量复跑期望命中 5/7→6/7；T4 批量化后结果与 T3 逐字节一致（同 92 节点/80 边）。
 2. **召回率红线**：现有精确/包含规则全部保留，召回结果与其取并集，实测召回率不低于现状。
-3. **语义红线**：上下位不算同一概念、不确定返回 null、失败保守建新、复用规则（mentionCount+1/别名并集≤20/主名不变）、关系端点过滤——代码路径未改动，压测 0 错合佐证 Prompt 补强有效。
-4. **embedding 路径**：已实现未启用（本环境无 `EMBEDDING_*` 配置）。配置 OpenAI 兼容接口后自动切换向量召回（余弦 top-K=15、阈值 0.6），向量存 `GraphNode.metadata`（`embedding`/`embeddingModel`）惰性回填，回填或调用失败自动降级 n-gram。
+3. **语义红线**：上下位不算同一概念、不确定返回 null、失败保守建新、复用规则（mentionCount+1/别名并集≤20/主名不变）、关系端点过滤——代码路径未改动，压测 0 错合佐证 Prompt 补强有效；T4 批量解析的缺项/非法项逐条兜底，不见错误传染同批其他项。
+4. **开销**：T4 批量化后同输入裁决 chat 25→13 次（−48%）、裁决耗时 33.7s→11.9s（−65%）、ingest 篇均 1.3s→1.0s。
+5. **embedding 路径**：已实现未启用（本环境无 `EMBEDDING_*` 配置）。配置 OpenAI 兼容接口后自动切换向量召回（余弦 top-K=15、阈值 0.6），向量存 `GraphNode.metadata`（`embedding`/`embeddingModel`）惰性回填，回填或调用失败自动降级 n-gram。
 
-## 5. 复现
+## 6. 复现
 
 ```bash
 # 全量复跑（真实调用 DeepSeek，16 抽取 + ~25-40 裁决）
@@ -73,6 +91,10 @@ npx tsx scripts/graph-stress-eval.mts      # 评估
 # 受控重放（只对齐层，无抽取调用；先备好历史库备份）
 npx tsx scripts/graph-stress-replay.mts backups/dev-xxxx-pre-t3.db scripts/graph-stress-replay-results.json
 npx tsx scripts/graph-stress-eval.mts scripts/graph-stress-replay-results.json
+
+# T4 批量裁决重放（输出到独立文件，与 T3 重放对比）
+npx tsx scripts/graph-stress-replay.mts backups/dev-xxxx-pre-t3.db scripts/graph-stress-replay-t4-results.json
+npx tsx scripts/graph-stress-eval.mts scripts/graph-stress-replay-t4-results.json
 
 # 基线对照
 npx tsx scripts/graph-stress-eval.mts scripts/graph-stress-results.baseline.json
