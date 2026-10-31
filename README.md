@@ -31,3 +31,7 @@ npm run start:local   # next start(0.0.0.0:3000) + 定时调度器
 - 停止：`Ctrl+C`。
 
 项目约定与模块机制见 `AGENTS.md`。
+
+## License
+
+[MIT](LICENSE)
